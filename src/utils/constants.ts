@@ -1,3 +1,5 @@
+export const DELIMITER = '/';
+
 export const Keys = {
   IS_PUBLIC: 'IS_PUBLIC',
   ACCESS_TOKEN_STRATEGY: 'ACCESS_TOKEN_STRATEGY',

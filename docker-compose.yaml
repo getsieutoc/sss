@@ -1,8 +1,8 @@
-name: nestjs-starter
+name: sss
 
 services:
   postgres:
-    container_name: starter-postgres
+    container_name: sss-postgres
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
@@ -15,7 +15,7 @@ services:
       POSTGRES_PASSWORD: password
 
   mailpit: # For sending email in development
-    container_name: starter-mailpit
+    container_name: sss-mailpit
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:

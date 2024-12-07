@@ -1,13 +1,11 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 
-export const handleError = (error: Error, message?: string) => {
-  if ('response' in error) {
-    return error.response;
+export const handleError = (err: Error, msg = 'Something wrong') => {
+  if ('response' in err) {
+    console.error(err.response ?? msg);
   }
 
-  throw new HttpException(
-    message ?? 'Something wrong',
-    HttpStatus.INTERNAL_SERVER_ERROR,
-    { cause: error }
-  );
+  throw new HttpException(msg, HttpStatus.INTERNAL_SERVER_ERROR, {
+    cause: err,
+  });
 };

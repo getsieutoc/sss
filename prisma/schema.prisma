@@ -1,11 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["omitApi"]
 }
 
@@ -20,22 +14,11 @@ enum Role {
   OWNER
 }
 
-model User {
-  id             String    @id @default(cuid())
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @default(now()) @updatedAt
-  name           String?
-  email          String    @unique
-  hashedPassword String
-  verified       DateTime?
-  image          String?
-}
-
 model Organization {
   id        String    @id @default(cuid())
-  name      String
   createdAt DateTime  @default(now())
   updatedAt DateTime  @default(now()) @updatedAt
+  name      String
   projects  Project[]
 }
 
@@ -47,22 +30,19 @@ model Project {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onUpdate: Cascade, onDelete: Cascade)
   apiKeys        ApiKey[]
-
-  @@index([organizationId])
 }
 
 model ApiKey {
   id              String    @id @default(cuid())
   createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
   description     String?
   publicKey       String    @unique
   hashedSecretKey String    @unique
-  lastUsedAt      DateTime?
-  expiresAt       DateTime?
-  projectId       String    @map("project_id")
+  projectId       String
   project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@index(projectId)
   @@index(publicKey)
-  @@index(hashedSecretKey)
 }

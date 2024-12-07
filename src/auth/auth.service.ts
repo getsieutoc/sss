@@ -1,105 +1,33 @@
-import {
-  ConflictException,
-  HttpStatus,
-  Inject,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { ExtendedPrismaService } from '@/database/prisma.client';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@/config';
-import { JwtService } from '@nestjs/jwt';
-import { JwtPayload } from '@/types';
+import { PrismaService } from '@/prisma/prisma.service';
 import * as argon2 from 'argon2';
 
-import { CreateApiKeyDto, LoginDto, SignUpDto } from './dto';
+import { CreateApiKeyDto } from './dto/api-key.dto';
 import { randomize } from '@/utils/randomize';
 import { addYears } from 'date-fns';
+import { DELIMITER } from '@/utils/constants';
 
 @Injectable()
 export class AuthService {
-  constructor(
-    @Inject('ExtendedPrismaService')
-    private readonly prisma: ExtendedPrismaService,
+  @Inject(PrismaService)
+  private readonly prisma: PrismaService;
 
-    private readonly config: ConfigService,
-    private readonly jwtService: JwtService
-  ) {}
+  @Inject(ConfigService)
+  private readonly config: ConfigService;
 
-  async signup({ name, email, password: rawPassword }: SignUpDto) {
-    const foundUser = await this.prisma.client.user.findUnique({
-      where: { email },
-    });
-
-    if (foundUser) {
-      throw new ConflictException('Email is already used');
-    }
-
-    const hashedPassword = await this.hash(rawPassword);
-
-    const newUser = await this.prisma.client.user.create({
-      data: {
-        name,
-        email,
-        hashedPassword,
-      },
-    });
-
-    const accessToken = await this.generateAccessToken({
-      id: newUser.id,
-      name,
-      email,
-    });
-
-    // await this.mailService.sendConfirmEmail({ email, confirmCode });
-    return {
-      statusCode: HttpStatus.OK,
-      accessToken,
-      user: newUser,
-    };
-  }
-
-  async login({ email, password }: LoginDto) {
-    const foundUser = await this.validateUser({ email, password });
-
-    if (!foundUser) {
-      throw new UnauthorizedException('No user found or wrong password');
-    }
-
-    const { id, name } = foundUser;
-
-    const accessToken = await this.generateAccessToken({
-      id,
-      name,
-      email,
+  async listApiKeys() {
+    const apiKeys = await this.prisma.apiKey.findMany({
+      where: { expiresAt: { gt: new Date() } },
     });
 
     return {
       statusCode: HttpStatus.OK,
-      accessToken,
-      user: foundUser,
+      data: apiKeys,
     };
   }
 
-  async validateUser({ email, password: rawPassword }: LoginDto) {
-    const foundUser = await this.prisma.client.user.findUnique({
-      omit: { hashedPassword: false },
-      where: { email },
-    });
-
-    if (!foundUser) {
-      return null;
-    }
-
-    const isValid = await this.verify(foundUser.hashedPassword, rawPassword);
-
-    if (!isValid) {
-      return null;
-    }
-
-    return foundUser;
-  }
-
-  async generateApiKey({
+  async createApiKey({
     projectId,
     expiresAt: customExpiresAt,
     ...rest
@@ -109,7 +37,7 @@ export class AuthService {
 
     const { expiresInYears } = this.config.get<ConfigType<'apiKey'>>('apiKey')!;
 
-    await this.prisma.client.apiKey.create({
+    const newKey = await this.prisma.apiKey.create({
       data: {
         ...rest,
         publicKey,
@@ -121,14 +49,45 @@ export class AuthService {
 
     return {
       statusCode: HttpStatus.OK,
-      apiKey: `${publicKey}-${secretKey}`,
+      data: newKey,
+      apiKey: [publicKey, secretKey].join(DELIMITER),
+    };
+  }
+
+  /*
+   * Generate API key for the first project of the first organization
+   */
+  async generateGenesisApiKey() {
+    const numOfOrgs = await this.prisma.organization.count();
+
+    if (numOfOrgs > 1) {
+      throw new Error(
+        'Can only generate Genesis API key for the first organization'
+      );
+    }
+
+    const numOfProjects = await this.prisma.project.count();
+
+    if (numOfProjects > 1) {
+      throw new Error(
+        'Can only generate Genesis API key for the first project'
+      );
+    }
+
+    const firstProject = await this.prisma.project.findFirstOrThrow();
+
+    const response = await this.createApiKey({ projectId: firstProject.id });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: response.data,
     };
   }
 
   async validateApiKey(token: string) {
-    const [publicKey, rawSecretKey] = token.split('-');
+    const [publicKey, rawSecretKey] = token.split(DELIMITER);
 
-    const foundKey = await this.prisma.client.apiKey.findUnique({
+    const foundKey = await this.prisma.apiKey.findUnique({
       omit: { hashedSecretKey: false },
       where: {
         publicKey,
@@ -140,7 +99,7 @@ export class AuthService {
       const isValid = await this.verify(foundKey.hashedSecretKey, rawSecretKey);
 
       if (isValid) {
-        return await this.prisma.client.apiKey.update({
+        return await this.prisma.apiKey.update({
           where: { id: foundKey.id },
           data: { lastUsedAt: new Date() },
         });
@@ -148,14 +107,6 @@ export class AuthService {
     }
 
     return null;
-  }
-
-  private async generateAccessToken(payload: JwtPayload) {
-    const jwtOptions = this.config.get<ConfigType<'jwt'>>('jwt')!;
-
-    const { secret, accessTokenExpiresIn: expiresIn } = jwtOptions;
-
-    return await this.jwtService.signAsync(payload, { secret, expiresIn });
   }
 
   private async hash(rawPassword: string) {

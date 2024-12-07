@@ -1,6 +1,7 @@
 import { JwtPayload as StandardJwtPayload } from 'jsonwebtoken';
 import { Request as ExpressRequest } from 'express';
 import { User } from '@prisma/client';
+import { HttpStatus } from '@nestjs/common';
 
 export * from '@prisma/client';
 
@@ -33,8 +34,8 @@ export type RecursivePartial<T> = {
   [P in keyof T]?: T[P] extends (infer U)[]
     ? RecursivePartial<U>[]
     : T[P] extends Record<string, unknown>
-    ? RecursivePartial<T[P]>
-    : T[P];
+      ? RecursivePartial<T[P]>
+      : T[P];
 };
 
 /**
@@ -59,3 +60,8 @@ type Left<A, B> = A & Neverify<B>;
 type Right<A, B> = B & Neverify<A>;
 
 export type Either<A, B> = RequiredProperty<Left<A, B> | Right<A, B>>;
+
+export type ApiKeyResponse = {
+  key: string;
+  status: HttpStatus;
+};
