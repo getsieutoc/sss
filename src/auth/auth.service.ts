@@ -74,14 +74,15 @@ export class AuthService {
       );
     }
 
+    const numOfKeys = await this.prisma.apiKey.count();
+
+    if (numOfKeys > 0) {
+      throw new Error('Genesis API key already exists');
+    }
+
     const firstProject = await this.prisma.project.findFirstOrThrow();
 
-    const response = await this.createApiKey({ projectId: firstProject.id });
-
-    return {
-      statusCode: HttpStatus.OK,
-      data: response.data,
-    };
+    return await this.createApiKey({ projectId: firstProject.id });
   }
 
   async validateApiKey(token: string) {

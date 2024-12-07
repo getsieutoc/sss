@@ -7,7 +7,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
-import { PrismaService } from './prisma/prisma.service';
+import { PrismaModule } from './prisma/prisma.module';
 import { ThrottlerConfig } from './common/throttler.service';
 
 import { configurations } from './config';
@@ -23,6 +23,7 @@ import { configurations } from './config';
       isGlobal: true,
     }),
     PassportModule,
+    PrismaModule,
     AuthModule,
   ],
   providers: [
@@ -31,7 +32,6 @@ import { configurations } from './config';
       useClass: ThrottlerGuard,
     },
     AppService,
-    PrismaService,
   ],
   controllers: [AppController],
 })

@@ -1,15 +1,27 @@
-import { Controller, Post, Body, UseGuards, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Inject } from '@nestjs/common';
 import { handleError } from '@/utils/error-handler';
 
 import { ApiKeyStrategy } from './strategies/api-key.strategy';
 import { AuthService } from './auth.service';
 import { CreateApiKeyDto } from './dto/api-key.dto';
+import { Public } from './decorators/public.decorator';
 
 @Controller('auth')
-@UseGuards(ApiKeyStrategy)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  @Inject(AuthService)
+  private readonly authService: AuthService;
 
+  @Public()
+  @Post('setup')
+  async createFirstApiKey() {
+    try {
+      return await this.authService.generateGenesisApiKey();
+    } catch (err) {
+      return handleError(err, 'Issues at creating genesis API key');
+    }
+  }
+
+  @UseGuards(ApiKeyStrategy)
   @Post('api-key')
   async createApiKey(@Body() data: CreateApiKeyDto) {
     try {
@@ -19,6 +31,7 @@ export class AuthController {
     }
   }
 
+  @UseGuards(ApiKeyStrategy)
   @Get('api-key')
   async listApiKeys() {
     try {
