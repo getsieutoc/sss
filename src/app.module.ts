@@ -6,6 +6,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
+import { FunctionModule } from './functions/functions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ThrottlerConfig } from './common/throttler.service';
 
@@ -23,6 +24,7 @@ import { configurations } from './config';
     }),
     PrismaModule,
     AuthModule,
+    FunctionModule,
   ],
   providers: [
     {

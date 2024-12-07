@@ -1,7 +1,7 @@
 import { Controller, Post, Body, UseGuards, Get, Inject } from '@nestjs/common';
 import { handleError } from '@/utils/error-handler';
 
-import { ApiKeyStrategy } from './strategies/api-key.strategy';
+import { ApiKeyGuard } from './guards/api-key.guard';
 import { AuthService } from './auth.service';
 import { CreateApiKeyDto } from './dto/api-key.dto';
 import { Public } from './decorators/public.decorator';
@@ -21,7 +21,7 @@ export class AuthController {
     }
   }
 
-  @UseGuards(ApiKeyStrategy)
+  @UseGuards(ApiKeyGuard)
   @Post('api-key')
   async createApiKey(@Body() data: CreateApiKeyDto) {
     try {
@@ -31,7 +31,7 @@ export class AuthController {
     }
   }
 
-  @UseGuards(ApiKeyStrategy)
+  @UseGuards(ApiKeyGuard)
   @Get('api-key')
   async listApiKeys() {
     try {
