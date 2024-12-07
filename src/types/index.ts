@@ -1,17 +1,6 @@
-import { JwtPayload as StandardJwtPayload } from 'jsonwebtoken';
-import { Request as ExpressRequest } from 'express';
-import { User } from '@prisma/client';
 import { HttpStatus } from '@nestjs/common';
 
 export * from '@prisma/client';
-
-export type UserPayload = Pick<User, 'id' | 'name' | 'email'>;
-
-export interface Request extends ExpressRequest {
-  user?: JwtPayload;
-}
-
-export interface JwtPayload extends UserPayload, StandardJwtPayload {}
 
 export type File = Express.Multer.File;
 

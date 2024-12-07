@@ -1,17 +1,14 @@
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
+import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
 
-import { UsersModule } from './users/users.module';
-import { AuthModule } from './auth/auth.module';
-
-import { ThrottlerConfig } from './common/throttler.service';
-import { PrismaService } from './prisma/prisma.service';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuthModule } from './auth/auth.module';
+import { PrismaService } from './prisma/prisma.service';
+import { ThrottlerConfig } from './common/throttler.service';
 
 import { configurations } from './config';
 
@@ -20,20 +17,12 @@ import { configurations } from './config';
     ThrottlerModule.forRootAsync({
       useClass: ThrottlerConfig,
     }),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('AUTH_SECRET'),
-      }),
-    }),
     ConfigModule.forRoot({
       load: [configurations],
       expandVariables: true,
       isGlobal: true,
     }),
     PassportModule,
-    UsersModule,
     AuthModule,
   ],
   providers: [

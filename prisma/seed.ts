@@ -4,25 +4,17 @@ const prisma = new PrismaClient();
 
 async function main() {
   if (process.env.NODE_ENV !== 'production') {
-    const organization = await prisma.organization.upsert({
-      where: {
+    const organization = await prisma.organization.create({
+      data: {
         name: 'Default',
       },
-      create: {
-        name: 'Default',
-      },
-      update: {},
     });
 
-    await prisma.project.upsert({
-      where: {
-        email: 'My project',
-      },
-      create: {
-        email: 'My project',
+    await prisma.project.create({
+      data: {
+        name: 'My project',
         organizationId: organization.id,
       },
-      update: {},
     });
 
     console.info('🌱  Database has been seeded. 🌱');
