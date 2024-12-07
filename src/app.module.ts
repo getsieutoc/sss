@@ -1,5 +1,4 @@
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { PassportModule } from '@nestjs/passport';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { Module } from '@nestjs/common';
@@ -22,7 +21,6 @@ import { configurations } from './config';
       expandVariables: true,
       isGlobal: true,
     }),
-    PassportModule,
     PrismaModule,
     AuthModule,
   ],

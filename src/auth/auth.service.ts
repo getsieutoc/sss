@@ -17,7 +17,7 @@ export class AuthService {
   private readonly config: ConfigService;
 
   async listApiKeys() {
-    const apiKeys = await this.prisma.apiKey.findMany({
+    const apiKeys = await this.prisma.client.apiKey.findMany({
       where: { expiresAt: { gt: new Date() } },
     });
 
@@ -37,7 +37,7 @@ export class AuthService {
 
     const { expiresInYears } = this.config.get<ConfigType<'apiKey'>>('apiKey')!;
 
-    const newKey = await this.prisma.apiKey.create({
+    const newKey = await this.prisma.client.apiKey.create({
       data: {
         ...rest,
         publicKey,
@@ -58,7 +58,7 @@ export class AuthService {
    * Generate API key for the first project of the first organization
    */
   async generateGenesisApiKey() {
-    const numOfOrgs = await this.prisma.organization.count();
+    const numOfOrgs = await this.prisma.client.organization.count();
 
     if (numOfOrgs > 1) {
       throw new Error(
@@ -66,7 +66,7 @@ export class AuthService {
       );
     }
 
-    const numOfProjects = await this.prisma.project.count();
+    const numOfProjects = await this.prisma.client.project.count();
 
     if (numOfProjects > 1) {
       throw new Error(
@@ -74,13 +74,13 @@ export class AuthService {
       );
     }
 
-    const numOfKeys = await this.prisma.apiKey.count();
+    const numOfKeys = await this.prisma.client.apiKey.count();
 
     if (numOfKeys > 0) {
       throw new Error('Genesis API key already exists');
     }
 
-    const firstProject = await this.prisma.project.findFirstOrThrow();
+    const firstProject = await this.prisma.client.project.findFirstOrThrow();
 
     return await this.createApiKey({ projectId: firstProject.id });
   }
@@ -88,7 +88,7 @@ export class AuthService {
   async validateApiKey(token: string) {
     const [publicKey, rawSecretKey] = token.split(DELIMITER);
 
-    const foundKey = await this.prisma.apiKey.findUnique({
+    const foundKey = await this.prisma.client.apiKey.findUnique({
       omit: { hashedSecretKey: false },
       where: {
         publicKey,
@@ -100,7 +100,7 @@ export class AuthService {
       const isValid = await this.verify(foundKey.hashedSecretKey, rawSecretKey);
 
       if (isValid) {
-        return await this.prisma.apiKey.update({
+        return await this.prisma.client.apiKey.update({
           where: { id: foundKey.id },
           data: { lastUsedAt: new Date() },
         });
