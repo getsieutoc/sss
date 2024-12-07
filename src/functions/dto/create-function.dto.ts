@@ -14,9 +14,9 @@ export class CreateFunctionDto {
   @IsString()
   readonly code: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  readonly entryPoint: string;
+  readonly entryPoint?: string;
 
   @IsOptional()
   @IsString()

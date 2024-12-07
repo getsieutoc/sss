@@ -31,11 +31,13 @@ export class FunctionService {
     };
   }
 
-  async executeFunction(functionId: string, input: any): Promise<any> {
+  async executeFunction(idOrName: string, input: any): Promise<any> {
     try {
       const { code, language } =
-        await this.prisma.client.function.findUniqueOrThrow({
-          where: { id: functionId },
+        await this.prisma.client.function.findFirstOrThrow({
+          where: {
+            OR: [{ id: idOrName }, { name: idOrName }],
+          },
         });
 
       const codeBuffer = Buffer.from(code);

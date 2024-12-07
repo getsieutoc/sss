@@ -54,7 +54,7 @@ model Function {
   updatedAt   DateTime @default(now()) @updatedAt
   name        String   @unique
   code        String
-  entryPoint  String
+  entryPoint  String?
   description String?
   language    String?  @default("javascript")
   runtime     String?  @default("nodejs")
@@ -65,4 +65,6 @@ model Function {
   envVars     Json?    @default("{}")
   projectId   String
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index(name)
 }

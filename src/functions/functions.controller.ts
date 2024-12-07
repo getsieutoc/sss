@@ -14,7 +14,7 @@ import { ApiKeyGuard } from '@/auth/guards/api-key.guard';
 import { FunctionService } from './functions.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
 
-@Controller('functions')
+@Controller('f')
 @UseGuards(ApiKeyGuard)
 export class FunctionController {
   @Inject(FunctionService)
@@ -29,13 +29,10 @@ export class FunctionController {
     }
   }
 
-  @Post('e/:functionId')
-  async executeFunction(
-    @Param('functionId') functionId: string,
-    @Body() input: any
-  ) {
+  @Post(':id')
+  async executeFunction(@Param('id') id: string, @Body() input: any) {
     try {
-      return await this.functionService.executeFunction(functionId, input);
+      return await this.functionService.executeFunction(id, input);
     } catch (err) {
       console.log('### err: ', err);
       return handleError(err, 'Issues at executing function');
