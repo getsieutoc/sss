@@ -1,12 +1,14 @@
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { PrismaService } from '@/prisma/prisma.service';
-import { CreateFunctionDto } from './dto/create-function.dto';
 import {
   type QuickJSContext,
-  QuickJSHandle,
+  type QuickJSHandle,
   getQuickJS,
 } from 'quickjs-emscripten';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import { functionIncludes } from '@/utils/rich-includes';
 import { type UnknownData } from '@/types';
+
+import { CreateFunctionDto } from './dto/create-function.dto';
 
 @Injectable()
 export class FunctionService {
@@ -39,13 +41,13 @@ export class FunctionService {
 
   async executeFunction(idOrName: string, input: { args: UnknownData[] }) {
     try {
-      const fn = await this.prisma.client.function.findFirstOrThrow({
+      const res = await this.prisma.client.function.findFirstOrThrow({
         where: {
           OR: [{ id: idOrName }, { name: idOrName }],
         },
       });
 
-      const { code, language, name } = fn;
+      const { code, language, name } = res;
 
       if (language === 'javascript') {
         try {
@@ -162,6 +164,7 @@ export class FunctionService {
   ) {
     const QuickJS = await getQuickJS();
     const context = QuickJS.newContext();
+
     let fn = null;
     let inputHandles: QuickJSHandle[] = [];
     let callResult = null;
@@ -195,6 +198,12 @@ export class FunctionService {
         throw new Error(
           `Function "${functionName}" not found in global context`
         );
+      }
+
+      // Check if the property is actually a function
+      const type = context.typeof(fn);
+      if (type !== 'function') {
+        throw new Error(`"${functionName}" is not a function (got ${type})`);
       }
 
       inputHandles = args.map((arg) => {
@@ -237,10 +246,14 @@ export class FunctionService {
       };
     } catch (error) {
       console.error('JavaScript execution error:', error);
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorDetails =
+        error instanceof Error ? error.cause || error : error;
       throw {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: `JavaScript execution failed: ${error.message}`,
-        errorDetails: error.cause || error,
+        message: `JavaScript execution failed: ${errorMessage}`,
+        errorDetails,
       };
     } finally {
       // Clean up all handles in reverse order
@@ -262,6 +275,7 @@ export class FunctionService {
   async listFunctions(projectId: string) {
     const functions = await this.prisma.client.function.findMany({
       where: { projectId },
+      include: functionIncludes,
     });
 
     return {
@@ -273,6 +287,7 @@ export class FunctionService {
   async getFunction(id: string) {
     const found = await this.prisma.client.function.findUnique({
       where: { id },
+      include: functionIncludes,
     });
 
     return {
@@ -282,8 +297,13 @@ export class FunctionService {
   }
 
   async deleteFunction(id: string) {
-    return await this.prisma.client.function.delete({
+    const res = await this.prisma.client.function.delete({
       where: { id },
     });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: res,
+    };
   }
 }

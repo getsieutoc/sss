@@ -1,5 +1,14 @@
 import { HttpStatus } from '@nestjs/common';
 
+import {
+  organizationIncludes,
+  projectIncludes,
+  apiKeyIncludes,
+  functionIncludes,
+} from '@/utils/rich-includes';
+
+import { Prisma } from '@prisma/client';
+
 export * from '@prisma/client';
 
 export type File = Express.Multer.File;
@@ -56,3 +65,19 @@ export type ApiKeyResponse = {
   key: string;
   status: HttpStatus;
 };
+
+export type OrganizationWithPayload = Prisma.OrganizationGetPayload<{
+  include: typeof organizationIncludes;
+}>;
+
+export type ProjectWithPayload = Prisma.ProjectGetPayload<{
+  include: typeof projectIncludes;
+}>;
+
+export type ApiKeyWithPayload = Prisma.ApiKeyGetPayload<{
+  include: typeof apiKeyIncludes;
+}>;
+
+export type FunctionWithPayload = Prisma.FunctionGetPayload<{
+  include: typeof functionIncludes;
+}>;
