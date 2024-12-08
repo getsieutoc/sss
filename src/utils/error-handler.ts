@@ -5,8 +5,6 @@ export const handleError = (err: Error, msg = 'Something wrong') => {
     throw err;
   }
 
-  console.error(err);
-  
   throw new HttpException(msg, HttpStatus.INTERNAL_SERVER_ERROR, {
     cause: err,
   });

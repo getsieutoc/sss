@@ -16,6 +16,7 @@ import { type UnknownData } from '@/types';
 
 import { FunctionService } from './functions.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
+import { UpdateFunctionDto } from './dto/update-function.dto';
 
 @Controller('functions')
 @UseGuards(ApiKeyGuard)
@@ -56,7 +57,7 @@ export class FunctionController {
   @Patch(':id')
   async updateFunction(
     @Param('id') id: string,
-    @Body() body: CreateFunctionDto
+    @Body() body: UpdateFunctionDto
   ) {
     try {
       return await this.functionService.updateFunction(id, body);

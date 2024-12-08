@@ -9,6 +9,7 @@ import { functionIncludes } from '@/utils/rich-includes';
 import { type UnknownData } from '@/types';
 
 import { CreateFunctionDto } from './dto/create-function.dto';
+import { UpdateFunctionDto } from './dto/update-function.dto';
 
 @Injectable()
 export class FunctionService {
@@ -54,7 +55,6 @@ export class FunctionService {
         try {
           return await this.executeJavascript({ code, name }, input);
         } catch (_) {
-          console.log(`[JavaScript Execution Error] Function: ${name}`);
           return {
             statusCode: HttpStatus.BAD_REQUEST,
             message: 'JavaScript execution failed',
@@ -66,8 +66,7 @@ export class FunctionService {
         statusCode: HttpStatus.BAD_REQUEST,
         message: 'Unsupported language',
       };
-    } catch (_) {
-      console.log(`[Function Execution Error] ID/Name: ${idOrName}`);
+    } catch (_error) {
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'Function execution failed',
@@ -148,7 +147,6 @@ export class FunctionService {
       }
       return objHandle;
     } catch (error) {
-      console.log('[Input Handle Preparation Error]');
       objHandle.dispose();
       throw error;
     }
@@ -171,20 +169,21 @@ export class FunctionService {
         ? code
         : `function ${functionName}() { ${code} }`;
 
-      console.log(`[JavaScript Execution] Function: ${functionName}`);
-
       const contextResult = context.evalCode(wrappedCode);
+
       if (contextResult.error) {
         contextResult.error.dispose();
+
         return {
           statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Failed to create function',
+          message: 'Failed to eval function',
         };
       }
 
       contextResult.value?.dispose();
 
       fn = context.getProp(context.global, functionName);
+
       if (!fn) {
         return {
           statusCode: HttpStatus.BAD_REQUEST,
@@ -214,29 +213,36 @@ export class FunctionService {
       callResult = context.callFunction(fn, context.undefined, ...inputHandles);
 
       if (callResult.error) {
-        console.log(`[JavaScript Runtime Error] Function: ${functionName}`);
         return {
           statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Runtime error in function execution',
+          message: `Runtime error in function execution: ${functionName}`,
         };
       }
 
       const result = context.dump(callResult.value);
+
       return {
         statusCode: HttpStatus.OK,
         data: result,
       };
     } catch (_error) {
-      console.log(`[JavaScript General Error] Function: ${name}`);
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
         message: 'Function execution failed',
       };
     } finally {
       inputHandles.forEach((handle) => handle?.dispose());
+
       fn?.dispose();
-      callResult?.value?.dispose();
-      callResult?.error?.dispose();
+
+      if (callResult && 'value' in callResult && callResult.value) {
+        callResult.value.dispose();
+      }
+
+      if (callResult && 'error' in callResult && callResult.error) {
+        callResult.error.dispose();
+      }
+
       context.dispose();
     }
   }
@@ -262,6 +268,19 @@ export class FunctionService {
     return {
       statusCode: HttpStatus.OK,
       data: found,
+    };
+  }
+
+  async updateFunction(id: string, data: UpdateFunctionDto) {
+    const updatedFunction = await this.prisma.client.function.update({
+      where: { id },
+      data,
+      include: functionIncludes,
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: updatedFunction,
     };
   }
 

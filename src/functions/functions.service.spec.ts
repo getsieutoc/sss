@@ -3,6 +3,7 @@ import { FunctionService } from './functions.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { HttpStatus } from '@nestjs/common';
 import { getQuickJS } from 'quickjs-emscripten';
+import { type UnknownData } from '@/types';
 
 // Mock QuickJS
 jest.mock('quickjs-emscripten', () => ({
@@ -20,6 +21,7 @@ describe('FunctionService', () => {
         findFirstOrThrow: jest.fn(),
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        update: jest.fn(),
         delete: jest.fn(),
       },
     },
@@ -135,6 +137,85 @@ describe('FunctionService', () => {
     });
   });
 
+  describe('updateFunction', () => {
+    const updateFunctionDto = {
+      name: 'updatedFunction',
+      code: 'function updated() { return "updated"; }',
+      language: 'javascript' as const,
+    };
+
+    it('should successfully update a function', async () => {
+      const functionId = 'test-id';
+      const expectedResponse = {
+        id: functionId,
+        ...updateFunctionDto,
+      };
+
+      mockPrismaService.client.function.update.mockResolvedValue(
+        expectedResponse
+      );
+
+      const result = await service.updateFunction(
+        functionId,
+        updateFunctionDto
+      );
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: expectedResponse,
+      });
+      expect(mockPrismaService.client.function.update).toHaveBeenCalledWith({
+        where: { id: functionId },
+        data: updateFunctionDto,
+        include: expect.any(Object),
+      });
+    });
+
+    it('should handle errors during function update', async () => {
+      const functionId = 'test-id';
+      const error = new Error('Update failed');
+      mockPrismaService.client.function.update.mockRejectedValue(error);
+
+      await expect(
+        service.updateFunction(functionId, updateFunctionDto)
+      ).rejects.toThrow('Update failed');
+    });
+  });
+
+  describe('deleteFunction', () => {
+    it('should successfully delete a function', async () => {
+      const functionId = 'test-id';
+      const deletedFunction = {
+        id: functionId,
+        name: 'testFunction',
+      };
+
+      mockPrismaService.client.function.delete.mockResolvedValue(
+        deletedFunction
+      );
+
+      const result = await service.deleteFunction(functionId);
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: deletedFunction,
+      });
+      expect(mockPrismaService.client.function.delete).toHaveBeenCalledWith({
+        where: { id: functionId },
+      });
+    });
+
+    it('should handle errors during function deletion', async () => {
+      const functionId = 'test-id';
+      const error = new Error('Delete failed');
+      mockPrismaService.client.function.delete.mockRejectedValue(error);
+
+      await expect(service.deleteFunction(functionId)).rejects.toThrow(
+        'Delete failed'
+      );
+    });
+  });
+
   describe('executeFunction', () => {
     const mockFunction = {
       id: '1',
@@ -143,44 +224,183 @@ describe('FunctionService', () => {
       language: 'javascript',
     };
 
-    const mockQuickJSContext = {
-      newContext: jest.fn().mockReturnValue({
-        evalCode: jest.fn(),
-        getProp: jest.fn(),
-        callFunction: jest.fn(),
-        dump: jest.fn(),
-        dispose: jest.fn(),
-        global: {},
-      }),
+    const mockValue = { dispose: jest.fn() };
+    const mockContext = {
+      evalCode: jest.fn().mockReturnValue({ value: mockValue, error: null }),
+      getProp: jest.fn().mockReturnValue(mockValue),
+      callFunction: jest
+        .fn()
+        .mockReturnValue({ value: mockValue, error: null }),
+      dump: jest.fn().mockReturnValue('hello'),
+      dispose: jest.fn(),
+      global: {},
+      undefined: undefined,
+      newString: jest.fn().mockReturnValue(mockValue),
+      newNumber: jest.fn().mockReturnValue(mockValue),
+      newArray: jest.fn().mockReturnValue(mockValue),
+      newObject: jest.fn().mockReturnValue(mockValue),
+      true: true,
+      false: false,
+      null: null,
+      setProp: jest.fn(),
+    };
+
+    const mockQuickJS = {
+      newContext: jest.fn().mockReturnValue(mockContext),
     };
 
     beforeEach(() => {
-      (getQuickJS as jest.Mock).mockResolvedValue(mockQuickJSContext);
+      (getQuickJS as jest.Mock).mockResolvedValue(mockQuickJS);
+      jest.clearAllMocks();
     });
 
     it('should execute a JavaScript function successfully', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(mockFunction);
+      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
+        mockFunction
+      );
 
-      const input = { args: [] };
+      const input = { args: [{ value: 'test' }] as UnknownData[] };
       const result = await service.executeFunction('testFunction', input);
 
-      expect(mockPrismaService.client.function.findFirstOrThrow).toHaveBeenCalledWith({
-        where: {
-          OR: [{ id: 'testFunction' }, { name: 'testFunction' }],
-        },
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: 'hello',
+      });
+
+      expect(mockContext.evalCode).toHaveBeenCalledWith(mockFunction.code);
+      expect(mockContext.getProp).toHaveBeenCalledWith(
+        mockContext.global,
+        'testFunction'
+      );
+      expect(mockContext.callFunction).toHaveBeenCalled();
+      expect(mockValue.dispose).toHaveBeenCalled();
+      expect(mockContext.dispose).toHaveBeenCalled();
+    });
+
+    it('should handle JavaScript eval errors', async () => {
+      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
+        mockFunction
+      );
+      mockContext.evalCode.mockReturnValue({
+        value: null,
+        error: { dispose: jest.fn() },
+      });
+
+      const result = await service.executeFunction('testFunction', {
+        args: [],
+      });
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Failed to eval function',
       });
     });
 
-    it('should handle function not found error', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockRejectedValue({
-        code: 'P2025',
+    it('should handle function not found in context', async () => {
+      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
+        mockFunction
+      );
+
+      // First mock successful eval
+      mockContext.evalCode.mockReturnValueOnce({
+        value: mockValue,
+        error: null,
       });
+      // Then mock function not found
+      mockContext.getProp.mockReturnValue(null);
+
+      const result = await service.executeFunction('testFunction', {
+        args: [],
+      });
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Function not found in context',
+      });
+    });
+
+    it('should handle JavaScript runtime errors', async () => {
+      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
+        mockFunction
+      );
+
+      // Mock successful eval and getProp
+      mockContext.evalCode.mockReturnValueOnce({
+        value: mockValue,
+        error: null,
+      });
+      mockContext.getProp.mockReturnValueOnce(mockValue);
+      // Then mock runtime error
+      mockContext.callFunction.mockReturnValue({
+        value: null,
+        error: { dispose: jest.fn() },
+      });
+
+      const result = await service.executeFunction('testFunction', {
+        args: [],
+      });
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Runtime error in function execution: testFunction',
+      });
+    });
+
+    it('should handle complex input arguments', async () => {
+      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
+        mockFunction
+      );
+
+      // Mock successful eval and getProp
+      mockContext.evalCode.mockReturnValueOnce({
+        value: mockValue,
+        error: null,
+      });
+      mockContext.getProp.mockReturnValueOnce(mockValue);
+      // Mock successful function call
+      mockContext.callFunction.mockReturnValue({
+        value: mockValue,
+        error: null,
+      });
+
+      const complexInput = {
+        args: [
+          {
+            string: 'test',
+            number: 42,
+            boolean: true,
+            array: [1, 'two', { nested: true }],
+            object: { key: 'value' },
+            null: null,
+          },
+        ] as UnknownData[],
+      };
+
+      const result = await service.executeFunction(
+        'testFunction',
+        complexInput
+      );
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: 'hello',
+      });
+
+      // Verify proper disposal of resources
+      expect(mockValue.dispose).toHaveBeenCalled();
+      expect(mockContext.dispose).toHaveBeenCalled();
+    });
+
+    it('should handle function not found error', async () => {
+      mockPrismaService.client.function.findFirstOrThrow.mockRejectedValue(
+        new Error()
+      );
 
       const result = await service.executeFunction('nonexistent', { args: [] });
 
       expect(result).toEqual({
-        statusCode: HttpStatus.NOT_FOUND,
-        message: 'Function not found: nonexistent',
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Function execution failed',
       });
     });
 
@@ -190,7 +410,9 @@ describe('FunctionService', () => {
         language: 'python',
       });
 
-      const result = await service.executeFunction('testFunction', { args: [] });
+      const result = await service.executeFunction('testFunction', {
+        args: [],
+      });
 
       expect(result).toEqual({
         statusCode: HttpStatus.BAD_REQUEST,
@@ -206,7 +428,9 @@ describe('FunctionService', () => {
         { id: '2', name: 'function2' },
       ];
 
-      mockPrismaService.client.function.findMany.mockResolvedValue(mockFunctions);
+      mockPrismaService.client.function.findMany.mockResolvedValue(
+        mockFunctions
+      );
 
       const result = await service.listFunctions('test-project');
 
@@ -225,7 +449,9 @@ describe('FunctionService', () => {
     it('should return a specific function', async () => {
       const mockFunction = { id: '1', name: 'testFunction' };
 
-      mockPrismaService.client.function.findUnique.mockResolvedValue(mockFunction);
+      mockPrismaService.client.function.findUnique.mockResolvedValue(
+        mockFunction
+      );
 
       const result = await service.getFunction('1');
 
@@ -233,10 +459,12 @@ describe('FunctionService', () => {
         statusCode: HttpStatus.OK,
         data: mockFunction,
       });
-      expect(mockPrismaService.client.function.findUnique).toHaveBeenCalledWith({
-        where: { id: '1' },
-        include: expect.any(Object),
-      });
+      expect(mockPrismaService.client.function.findUnique).toHaveBeenCalledWith(
+        {
+          where: { id: '1' },
+          include: expect.any(Object),
+        }
+      );
     });
 
     it('should return null when function not found', async () => {
@@ -247,24 +475,6 @@ describe('FunctionService', () => {
       expect(result).toEqual({
         statusCode: HttpStatus.OK,
         data: null,
-      });
-    });
-  });
-
-  describe('deleteFunction', () => {
-    it('should delete a function', async () => {
-      const mockFunction = { id: '1', name: 'testFunction' };
-
-      mockPrismaService.client.function.delete.mockResolvedValue(mockFunction);
-
-      const result = await service.deleteFunction('1');
-
-      expect(result).toEqual({
-        statusCode: HttpStatus.OK,
-        data: mockFunction,
-      });
-      expect(mockPrismaService.client.function.delete).toHaveBeenCalledWith({
-        where: { id: '1' },
       });
     });
   });

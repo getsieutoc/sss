@@ -11,6 +11,8 @@ describe('FunctionController', () => {
     registerFunction: jest.fn(),
     executeFunction: jest.fn(),
     listFunctions: jest.fn(),
+    updateFunction: jest.fn(),
+    deleteFunction: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -67,7 +69,7 @@ describe('FunctionController', () => {
   describe('executeFunction', () => {
     it('should execute a function by id or name', async () => {
       const idOrName = 'test-function';
-      const input = { data: 'test-data' };
+      const input = { args: [{ value: 'test-data' }] };
       const expectedResult = { output: 'test-output' };
 
       mockFunctionService.executeFunction.mockResolvedValue(expectedResult);
@@ -79,7 +81,7 @@ describe('FunctionController', () => {
 
     it('should handle errors during function execution', async () => {
       const idOrName = 'test-function';
-      const input = { data: 'test-data' };
+      const input = { args: [{ value: 'test-data' }] };
       const error = new Error('Execution failed');
 
       mockFunctionService.executeFunction.mockRejectedValue(error);
@@ -113,6 +115,68 @@ describe('FunctionController', () => {
 
       await expect(controller.listFunctions(projectId)).rejects.toThrow(
         'Issues at listing function'
+      );
+    });
+  });
+
+  describe('updateFunction', () => {
+    it('should update a function', async () => {
+      const functionId = 'test-id';
+      const updateFunctionDto = {
+        name: 'updated-function',
+        code: 'console.log("updated")',
+      };
+      const expectedResult = { id: functionId, ...updateFunctionDto };
+
+      mockFunctionService.updateFunction.mockResolvedValue(expectedResult);
+
+      const result = await controller.updateFunction(
+        functionId,
+        updateFunctionDto
+      );
+      expect(result).toEqual(expectedResult);
+      expect(service.updateFunction).toHaveBeenCalledWith(
+        functionId,
+        updateFunctionDto
+      );
+    });
+
+    it('should handle errors during function update', async () => {
+      const functionId = 'test-id';
+      const updateFunctionDto = {
+        name: 'updated-function',
+        code: 'console.log("updated")',
+      };
+      const error = new Error('Update failed');
+
+      mockFunctionService.updateFunction.mockRejectedValue(error);
+
+      await expect(
+        controller.updateFunction(functionId, updateFunctionDto)
+      ).rejects.toThrow('Issues at updating function');
+    });
+  });
+
+  describe('deleteFunction', () => {
+    it('should delete a function', async () => {
+      const functionId = 'test-id';
+      const expectedResult = { id: functionId, deleted: true };
+
+      mockFunctionService.deleteFunction.mockResolvedValue(expectedResult);
+
+      const result = await controller.deleteFunction(functionId);
+      expect(result).toEqual(expectedResult);
+      expect(service.deleteFunction).toHaveBeenCalledWith(functionId);
+    });
+
+    it('should handle errors during function deletion', async () => {
+      const functionId = 'test-id';
+      const error = new Error('Delete failed');
+
+      mockFunctionService.deleteFunction.mockRejectedValue(error);
+
+      await expect(controller.deleteFunction(functionId)).rejects.toThrow(
+        'Issues at deleting function'
       );
     });
   });
