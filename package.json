@@ -1,10 +1,9 @@
 {
-  "name": "nestjs-starter",
-  "version": "0.0.1",
-  "description": "",
+  "name": "super-simple-serverless",
+  "version": "0.0.2",
+  "description": "Super Simple Serverless",
   "author": "Sang Dang",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "clean": "rimraf node_modules dist && pnpm install",
     "dev": "docker compose up -d && pnpm watch && docker compose stop",
