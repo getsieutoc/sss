@@ -1,17 +1,45 @@
-# Nestjs Starter
+# Super Simple Server
 
-Clone the starter:
+A lightweight NestJS server with built-in authentication, database integration, and Docker support.
 
-```bash
-pnpm dlx tiged getsieutoc/nestjs-starter
-```
+## Features
 
-Usage:
+- NestJS framework with TypeScript
+- PostgreSQL database with Prisma ORM
+- API key authentication
+- Docker containerization
+- API rate limiting
+- Tests setup
 
-- Copy the .env
+## Prerequisites
 
-```
-cp env.example .env
-```
+- Node.js
+- pnpm
+- Docker
 
-- Run the dev script: `pnpm run dev`
+## Getting Started
+
+1. Clone the repository
+2. Copy `.env.example` to `.env`
+3. Install dependencies:
+   ```bash
+   pnpm install
+   ```
+4. Start development server:
+   ```bash
+   pnpm dev
+   ```
+
+The server will be available at `http://localhost:3001`
+
+## Available Scripts
+
+- `pnpm dev` - Start development server with Docker
+- `pnpm build` - Build for production
+- `pnpm test` - Run tests
+- `pnpm lint` - Run linter
+- `pnpm format` - Format code
+
+## License
+
+MIT License
