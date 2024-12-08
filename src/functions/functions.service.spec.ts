@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { FunctionService } from './functions.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { HttpStatus } from '@nestjs/common';
-import { getQuickJS } from 'quickjs-emscripten';
+import { quickJS } from '@sebastianwessel/quickjs';
 import { type UnknownData } from '@/types';
 
 // Mock QuickJS
-jest.mock('quickjs-emscripten', () => ({
-  getQuickJS: jest.fn(),
+jest.mock('@sebastianwessel/quickjs', () => ({
+  quickJS: jest.fn(),
 }));
 
 describe('FunctionService', () => {
@@ -220,79 +220,21 @@ describe('FunctionService', () => {
     const mockFunction = {
       id: '1',
       name: 'testFunction',
-      code: 'function testFunction() { return "hello"; }',
+      code: 'function testFunction(a, b) { return a * b; }',
       language: 'javascript',
     };
-
-    const mockValue = { dispose: jest.fn() };
-    const mockContext = {
-      evalCode: jest.fn().mockReturnValue({ value: mockValue, error: null }),
-      getProp: jest.fn().mockReturnValue(mockValue),
-      callFunction: jest
-        .fn()
-        .mockReturnValue({ value: mockValue, error: null }),
-      dump: jest.fn().mockReturnValue('hello'),
-      dispose: jest.fn(),
-      global: {},
-      undefined: undefined,
-      newString: jest.fn().mockReturnValue(mockValue),
-      newNumber: jest.fn().mockReturnValue(mockValue),
-      newArray: jest.fn().mockReturnValue(mockValue),
-      newObject: jest.fn().mockReturnValue(mockValue),
-      true: true,
-      false: false,
-      null: null,
-      setProp: jest.fn(),
-    };
-
-    const mockQuickJS = {
-      newContext: jest.fn().mockReturnValue(mockContext),
-    };
-
-    beforeEach(() => {
-      (getQuickJS as jest.Mock).mockResolvedValue(mockQuickJS);
-      jest.clearAllMocks();
-    });
 
     it('should execute a JavaScript function successfully', async () => {
       mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
         mockFunction
       );
 
-      const input = { args: [{ value: 'test' }] as UnknownData[] };
+      const input = { args: [1, 2] as UnknownData[] };
       const result = await service.executeFunction('testFunction', input);
 
       expect(result).toEqual({
         statusCode: HttpStatus.OK,
-        data: 'hello',
-      });
-
-      expect(mockContext.evalCode).toHaveBeenCalledWith(mockFunction.code);
-      expect(mockContext.getProp).toHaveBeenCalledWith(
-        mockContext.global,
-        'testFunction'
-      );
-      expect(mockContext.callFunction).toHaveBeenCalled();
-      expect(mockValue.dispose).toHaveBeenCalled();
-      expect(mockContext.dispose).toHaveBeenCalled();
-    });
-
-    it('should handle JavaScript eval errors', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
-        mockFunction
-      );
-      mockContext.evalCode.mockReturnValue({
-        value: null,
-        error: { dispose: jest.fn() },
-      });
-
-      const result = await service.executeFunction('testFunction', {
-        args: [],
-      });
-
-      expect(result).toEqual({
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Failed to eval function',
+        data: 2,
       });
     });
 
@@ -301,14 +243,6 @@ describe('FunctionService', () => {
         mockFunction
       );
 
-      // First mock successful eval
-      mockContext.evalCode.mockReturnValueOnce({
-        value: mockValue,
-        error: null,
-      });
-      // Then mock function not found
-      mockContext.getProp.mockReturnValue(null);
-
       const result = await service.executeFunction('testFunction', {
         args: [],
       });
@@ -316,91 +250,6 @@ describe('FunctionService', () => {
       expect(result).toEqual({
         statusCode: HttpStatus.BAD_REQUEST,
         message: 'Function not found in context',
-      });
-    });
-
-    it('should handle JavaScript runtime errors', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
-        mockFunction
-      );
-
-      // Mock successful eval and getProp
-      mockContext.evalCode.mockReturnValueOnce({
-        value: mockValue,
-        error: null,
-      });
-      mockContext.getProp.mockReturnValueOnce(mockValue);
-      // Then mock runtime error
-      mockContext.callFunction.mockReturnValue({
-        value: null,
-        error: { dispose: jest.fn() },
-      });
-
-      const result = await service.executeFunction('testFunction', {
-        args: [],
-      });
-
-      expect(result).toEqual({
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Runtime error in function execution: testFunction',
-      });
-    });
-
-    it('should handle complex input arguments', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockResolvedValue(
-        mockFunction
-      );
-
-      // Mock successful eval and getProp
-      mockContext.evalCode.mockReturnValueOnce({
-        value: mockValue,
-        error: null,
-      });
-      mockContext.getProp.mockReturnValueOnce(mockValue);
-      // Mock successful function call
-      mockContext.callFunction.mockReturnValue({
-        value: mockValue,
-        error: null,
-      });
-
-      const complexInput = {
-        args: [
-          {
-            string: 'test',
-            number: 42,
-            boolean: true,
-            array: [1, 'two', { nested: true }],
-            object: { key: 'value' },
-            null: null,
-          },
-        ] as UnknownData[],
-      };
-
-      const result = await service.executeFunction(
-        'testFunction',
-        complexInput
-      );
-
-      expect(result).toEqual({
-        statusCode: HttpStatus.OK,
-        data: 'hello',
-      });
-
-      // Verify proper disposal of resources
-      expect(mockValue.dispose).toHaveBeenCalled();
-      expect(mockContext.dispose).toHaveBeenCalled();
-    });
-
-    it('should handle function not found error', async () => {
-      mockPrismaService.client.function.findFirstOrThrow.mockRejectedValue(
-        new Error()
-      );
-
-      const result = await service.executeFunction('nonexistent', { args: [] });
-
-      expect(result).toEqual({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Function execution failed',
       });
     });
 

@@ -1,8 +1,4 @@
-import {
-  type QuickJSContext,
-  type QuickJSHandle,
-  getQuickJS,
-} from 'quickjs-emscripten';
+import { quickJS } from '@sebastianwessel/quickjs';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { functionIncludes } from '@/utils/rich-includes';
@@ -42,208 +38,51 @@ export class FunctionService {
   }
 
   async executeFunction(idOrName: string, input: { args: UnknownData[] }) {
-    try {
-      const res = await this.prisma.client.function.findFirstOrThrow({
-        where: {
-          OR: [{ id: idOrName }, { name: idOrName }],
-        },
-      });
+    // Find the function in database
+    const functionData = await this.prisma.client.function.findFirst({
+      where: { id: idOrName },
+    });
 
-      const { code, language, name } = res;
-
-      if (language === 'javascript') {
-        try {
-          return await this.executeJavascript({ code, name }, input);
-        } catch (_) {
-          return {
-            statusCode: HttpStatus.BAD_REQUEST,
-            message: 'JavaScript execution failed',
-          };
-        }
-      }
-
+    if (!functionData) {
       return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Unsupported language',
-      };
-    } catch (_error) {
-      return {
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Function execution failed',
+        statusCode: HttpStatus.NOT_FOUND,
+        data: null,
       };
     }
-  }
-
-  private prepareInputHandle = (
-    ctx: QuickJSContext,
-    input: Record<string, unknown>
-  ) => {
-    if (!input || typeof input !== 'object') {
-      return ctx.null;
-    }
-
-    const objHandle = ctx.newObject();
 
     try {
-      for (const [key, value] of Object.entries(input)) {
-        let propHandle;
+      // Create a new QuickJS runtime
+      const runtime = await quickJS();
 
-        switch (typeof value) {
-          case 'string':
-            propHandle = ctx.newString(value);
-            ctx.setProp(objHandle, key, propHandle);
-            propHandle.dispose();
-            break;
-          case 'number':
-            propHandle = ctx.newNumber(value);
-            ctx.setProp(objHandle, key, propHandle);
-            propHandle.dispose();
-            break;
-          case 'boolean':
-            ctx.setProp(objHandle, key, value ? ctx.true : ctx.false);
-            break;
-          case 'object':
-            if (!value) {
-              ctx.setProp(objHandle, key, ctx.null);
-              break;
-            }
-            if (Array.isArray(value)) {
-              const arrayHandle = ctx.newArray();
-              try {
-                value.forEach((v, i) => {
-                  const elemHandle = this.prepareInputHandle(
-                    ctx,
-                    typeof v === 'object' && v !== null
-                      ? (v as Record<string, unknown>)
-                      : { value: v }
-                  );
-                  try {
-                    ctx.setProp(arrayHandle, i, elemHandle);
-                  } finally {
-                    elemHandle.dispose();
-                  }
-                });
-                ctx.setProp(objHandle, key, arrayHandle);
-              } finally {
-                arrayHandle.dispose();
-              }
-              break;
-            }
-            {
-              const nestedHandle = this.prepareInputHandle(
-                ctx,
-                typeof value === 'object' && value !== null
-                  ? (value as Record<string, unknown>)
-                  : { value }
-              );
-              try {
-                ctx.setProp(objHandle, key, nestedHandle);
-              } finally {
-                nestedHandle.dispose();
-              }
-              break;
-            }
-        }
-      }
-      return objHandle;
-    } catch (error) {
-      objHandle.dispose();
-      throw error;
-    }
-  };
+      console.log(runtime); // Log the runtime object to inspect its structure
+      console.log('Available methods:', Object.keys(runtime)); // Log available methods
+      console.log('Available methods:', Object.getOwnPropertyNames(runtime)); // Log available methods
 
-  private async executeJavascript(
-    { code, name }: { code: string; name: string },
-    { args }: { args: UnknownData[] }
-  ) {
-    const QuickJS = await getQuickJS();
-    const context = QuickJS.newContext();
+      // Evaluate the function code
+      const evalResult = runtime.evalCode(functionData.code);
 
-    let fn = null;
-    let inputHandles: QuickJSHandle[] = [];
-    let callResult = null;
-
-    try {
-      const functionName = name || 'anonymous';
-      const wrappedCode = code.trim().startsWith('function')
-        ? code
-        : `function ${functionName}() { ${code} }`;
-
-      const contextResult = context.evalCode(wrappedCode);
-
-      if (contextResult.error) {
-        contextResult.error.dispose();
-
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Failed to eval function',
-        };
+      if (evalResult.error) {
+        throw new Error(`Function evaluation error: ${evalResult.error}`);
       }
 
-      contextResult.value?.dispose();
+      // Get the function from the runtime
+      const fn = runtime.getValue(evalResult.value);
 
-      fn = context.getProp(context.global, functionName);
+      // Execute the function with provided arguments
+      const result = fn(...(input.args || []));
 
-      if (!fn) {
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Function not found in context',
-        };
-      }
-
-      inputHandles = args.map((arg) => {
-        if (typeof arg === 'object') {
-          return this.prepareInputHandle(
-            context,
-            arg as Record<string, unknown>
-          );
-        }
-        switch (typeof arg) {
-          case 'string':
-            return context.newString(arg);
-          case 'number':
-            return context.newNumber(arg);
-          case 'boolean':
-            return arg ? context.true : context.false;
-          default:
-            return context.null;
-        }
-      });
-
-      callResult = context.callFunction(fn, context.undefined, ...inputHandles);
-
-      if (callResult.error) {
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: `Runtime error in function execution: ${functionName}`,
-        };
-      }
-
-      const result = context.dump(callResult.value);
+      // Clean up
+      runtime.dispose();
 
       return {
         statusCode: HttpStatus.OK,
         data: result,
       };
-    } catch (_error) {
+    } catch (error) {
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Function execution failed',
+        data: error.message,
       };
-    } finally {
-      inputHandles.forEach((handle) => handle?.dispose());
-
-      fn?.dispose();
-
-      if (callResult && 'value' in callResult && callResult.value) {
-        callResult.value.dispose();
-      }
-
-      if (callResult && 'error' in callResult && callResult.error) {
-        callResult.error.dispose();
-      }
-
-      context.dispose();
     }
   }
 
@@ -260,6 +99,7 @@ export class FunctionService {
   }
 
   async getFunction(id: string) {
+    console.log('getFunction called with id:', id); // Log the input parameter
     const found = await this.prisma.client.function.findUnique({
       where: { id },
       include: functionIncludes,
