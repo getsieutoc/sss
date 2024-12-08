@@ -133,18 +133,20 @@ export class FunctionService {
               }
               break;
             }
-            const nestedHandle = this.prepareInputHandle(
-              ctx,
-              typeof value === 'object' && value !== null
-                ? (value as Record<string, unknown>)
-                : { value }
-            );
-            try {
-              ctx.setProp(objHandle, key, nestedHandle);
-            } finally {
-              nestedHandle.dispose();
+            {
+              const nestedHandle = this.prepareInputHandle(
+                ctx,
+                typeof value === 'object' && value !== null
+                  ? (value as Record<string, unknown>)
+                  : { value }
+              );
+              try {
+                ctx.setProp(objHandle, key, nestedHandle);
+              } finally {
+                nestedHandle.dispose();
+              }
+              break;
             }
-            break;
         }
       }
       return objHandle;
