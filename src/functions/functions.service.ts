@@ -1,8 +1,4 @@
-import {
-  type QuickJSContext,
-  type QuickJSHandle,
-  getQuickJS,
-} from 'quickjs-emscripten';
+import { quickJS } from '@sebastianwessel/quickjs';
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { functionIncludes } from '@/utils/rich-includes';
@@ -74,10 +70,7 @@ export class FunctionService {
     }
   }
 
-  private prepareInputHandle = (
-    ctx: QuickJSContext,
-    input: Record<string, unknown>
-  ) => {
+  private prepareInputHandle = (ctx: any, input: Record<string, unknown>) => {
     if (!input || typeof input !== 'object') {
       return ctx.null;
     }
@@ -156,94 +149,142 @@ export class FunctionService {
     { code, name }: { code: string; name: string },
     { args }: { args: UnknownData[] }
   ) {
-    const QuickJS = await getQuickJS();
-    const context = QuickJS.newContext();
+    const runtime = await quickJS();
+    const { evalCode, context } = (await runtime.createRuntime({
+      env: {
+        KV: {
+          set: (key: string, value: string) => {
+            console.log('KV.set called with:', key, value);
+            return true;
+          },
+          get: (key: string) => {
+            console.log('KV.get called with:', key);
+            return null;
+          },
+        },
+      },
+    })) as any;
 
-    let fn = null;
-    let inputHandles: QuickJSHandle[] = [];
-    let callResult = null;
+    let fn: any = null;
+    const inputHandles: any[] = [];
+    let callResult: any = null;
 
     try {
-      const functionName = name || 'anonymous';
+      // Validate function name
+      const functionName = name.trim() || 'anonymous';
+
+      // Properly wrap the code if it's not already a function
       const wrappedCode = code.trim().startsWith('function')
         ? code
-        : `function ${functionName}() { ${code} }`;
+        : `function ${functionName}(...args) { ${code} }`;
 
-      const contextResult = context.evalCode(wrappedCode);
+      // Evaluate the code in the context
+      const contextResult = (await evalCode(wrappedCode)) as any;
 
-      if (contextResult.error) {
+      if (contextResult?.error) {
+        const errorMessage = context.dump(contextResult.error);
         contextResult.error.dispose();
 
         return {
           statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Failed to eval function',
+          message: `Failed to eval function: ${errorMessage}`,
         };
       }
 
-      contextResult.value?.dispose();
+      if (contextResult?.value) {
+        contextResult.value.dispose();
+      }
 
+      // Get the function from the global context
       fn = context.getProp(context.global, functionName);
 
       if (!fn) {
         return {
           statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Function not found in context',
+          message: `Function '${functionName}' not found in context`,
         };
       }
 
-      inputHandles = args.map((arg) => {
+      // Prepare input arguments
+      args.forEach((arg) => {
         if (typeof arg === 'object') {
-          return this.prepareInputHandle(
-            context,
-            arg as Record<string, unknown>
+          inputHandles.push(
+            this.prepareInputHandle(context, arg as Record<string, unknown>)
           );
+          return;
         }
+
         switch (typeof arg) {
           case 'string':
-            return context.newString(arg);
+            inputHandles.push(context.newString(arg));
+            break;
           case 'number':
-            return context.newNumber(arg);
+            inputHandles.push(context.newNumber(arg));
+            break;
           case 'boolean':
-            return arg ? context.true : context.false;
+            inputHandles.push(arg ? context.true : context.false);
+            break;
+          case 'undefined':
+            inputHandles.push(context.undefined);
+            break;
           default:
-            return context.null;
+            inputHandles.push(context.null);
         }
       });
 
+      // Call the function with prepared arguments
       callResult = context.callFunction(fn, context.undefined, ...inputHandles);
 
-      if (callResult.error) {
+      if (callResult?.error) {
+        const errorMessage = context.dump(callResult.error);
         return {
           statusCode: HttpStatus.BAD_REQUEST,
-          message: `Runtime error in function execution: ${functionName}`,
+          message: `Runtime error in function '${functionName}': ${errorMessage}`,
         };
       }
 
-      const result = context.dump(callResult.value);
+      const result = context.dump(callResult?.value);
 
       return {
         statusCode: HttpStatus.OK,
         data: result,
       };
-    } catch (_error) {
+    } catch (error) {
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Function execution failed',
+        message:
+          error instanceof Error ? error.message : 'Function execution failed',
       };
     } finally {
-      inputHandles.forEach((handle) => handle?.dispose());
+      // Clean up all resources
+      inputHandles.forEach((handle) => {
+        if (handle && typeof handle.dispose === 'function') {
+          handle.dispose();
+        }
+      });
 
-      fn?.dispose();
-
-      if (callResult && 'value' in callResult && callResult.value) {
-        callResult.value.dispose();
+      if (fn && typeof fn.dispose === 'function') {
+        fn.dispose();
       }
 
-      if (callResult && 'error' in callResult && callResult.error) {
-        callResult.error.dispose();
+      if (callResult) {
+        if (
+          callResult.value &&
+          typeof callResult.value.dispose === 'function'
+        ) {
+          callResult.value.dispose();
+        }
+        if (
+          callResult.error &&
+          typeof callResult.error.dispose === 'function'
+        ) {
+          callResult.error.dispose();
+        }
       }
 
-      context.dispose();
+      if (context && typeof context.dispose === 'function') {
+        context.dispose();
+      }
     }
   }
 

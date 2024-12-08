@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { FunctionService } from './functions.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { HttpStatus } from '@nestjs/common';
-import { getQuickJS } from 'quickjs-emscripten';
+import { quickJS } from '@sebastianwessel/quickjs';
 import { type UnknownData } from '@/types';
 
 // Mock QuickJS
-jest.mock('quickjs-emscripten', () => ({
-  getQuickJS: jest.fn(),
+jest.mock('@sebastianwessel/quickjs', () => ({
+  quickJS: jest.fn(),
 }));
 
 describe('FunctionService', () => {
@@ -250,7 +250,7 @@ describe('FunctionService', () => {
     };
 
     beforeEach(() => {
-      (getQuickJS as jest.Mock).mockResolvedValue(mockQuickJS);
+      (quickJS as jest.Mock).mockResolvedValue(mockQuickJS);
       jest.clearAllMocks();
     });
 
