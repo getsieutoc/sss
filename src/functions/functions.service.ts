@@ -56,87 +56,87 @@ export class FunctionService {
   }
 
   private async executeJavascript(
-    { code }: { code: string; name?: string },
+    { code, name }: { code: string; name: string },
     input: { args: UnknownData }
   ) {
     const QuickJS = await getQuickJS();
-    const vm = QuickJS.newContext();
-    let result;
 
-    try {
-      // Create a function from the code string
-      result = vm.evalCode(code);
+    const context = QuickJS.newContext();
 
-      if (result.error) {
-        result.error.dispose();
-        throw new Error('Failed to create function');
-      }
+    // Create a function from the code string
+    const contextResult = context.evalCode(code);
 
-      // Get the function handle
-      const fn = result.value;
-
-      // Convert input args to QuickJS handles
-      const inputHandle = this.prepareInputHandle(vm, input.args);
-      console.log('### inputHandle: ', inputHandle);
-
-      // Call the function with args
-      const callResult = vm.callFunction(fn, vm.global, inputHandle);
-      console.log('### callResult: ', callResult);
-
-      if (callResult.error) {
-        callResult.error.dispose();
-        throw new Error('Function execution failed');
-      }
-
-      // Get the final result and convert it to a JavaScript value
-      const finalResult = vm.dump(callResult.value);
-      console.log('### finalResult: ', finalResult);
-
-      // Cleanup all handles
-      callResult.value.dispose();
-      fn.dispose();
-      inputHandle.dispose();
-
-      return finalResult;
-    } finally {
-      console.log('### result: ', result);
-      if (result) {
-        result.dispose();
-      }
-      vm.dispose();
+    if (contextResult.error) {
+      contextResult.error.dispose();
+      throw new Error('Failed to create function');
     }
+
+    // Get the function handle
+    const fn = contextResult.value;
+
+    using fnHandle = context.newFunction(name, () => fn);
+
+    context.setProp(context.global, name, fnHandle);
+
+    // Convert input args to QuickJS handles
+    const inputHandle = this.prepareInputHandle(context, input);
+
+    // Call the function with args
+    const callResult = context.callFunction(fn, context.global, inputHandle);
+
+    if (callResult.error) {
+      callResult.error.dispose();
+      throw new Error('Function execution failed');
+    }
+
+    // Get the final result and convert it to a JavaScript value
+    const finalResult = context.dump(callResult.value);
+
+    // Cleanup all handles
+    callResult.value.dispose();
+    fn.dispose();
+    inputHandle.dispose();
+
+    if (contextResult) {
+      contextResult.dispose();
+    }
+
+    context.dispose();
+
+    return finalResult;
   }
 
-  private prepareInputHandle = (vm: QuickJSContext, input: UnknownData) => {
-    const objHandle = vm.newObject();
+  private prepareInputHandle = (ctx: QuickJSContext, input: UnknownData) => {
+    const objHandle = ctx.newObject();
 
     for (const [key, value] of Object.entries(input)) {
       switch (typeof value) {
         case 'string':
-          vm.setProp(objHandle, key, vm.newString(value));
+          ctx.setProp(objHandle, key, ctx.newString(value));
           break;
         case 'number':
-          vm.setProp(objHandle, key, vm.newNumber(value));
+          ctx.setProp(objHandle, key, ctx.newNumber(value));
           break;
         case 'boolean':
-          vm.setProp(objHandle, key, value ? vm.true : vm.false);
+          ctx.setProp(objHandle, key, value ? ctx.true : ctx.false);
           break;
         case 'object':
           // Speciall null case
           if (!value) {
-            vm.setProp(objHandle, key, vm.null);
+            ctx.setProp(objHandle, key, ctx.null);
             break;
           }
           // Array case
           if (Array.isArray(value)) {
-            const arrayHandle = vm.newArray();
+            const arrayHandle = ctx.newArray();
             value.map((v, i) => {
-              const newHandle = this.prepareInputHandle(vm, v);
-              vm.setProp(arrayHandle, i, newHandle);
+              const newHandle = this.prepareInputHandle(ctx, v);
+              ctx.setProp(arrayHandle, i, newHandle);
             });
             break;
           }
-          this.prepareInputHandle(vm, value as UnknownData);
+          // Object case
+          this.prepareInputHandle(ctx, value as UnknownData);
           break;
         default:
           break;
