@@ -33,7 +33,7 @@ export class FunctionService {
     };
   }
 
-  async executeFunction(idOrName: string, input: { args: UnknownData }) {
+  async executeFunction(idOrName: string, input: { args: UnknownData[] }) {
     try {
       const { code, language, name } =
         await this.prisma.client.function.findFirstOrThrow({
@@ -56,54 +56,78 @@ export class FunctionService {
   }
 
   private async executeJavascript(
-    { code, name }: { code: string; name: string },
-    input: { args: UnknownData }
+    { code }: { code: string; name: string },
+    { args }: { args: UnknownData[] }
   ) {
     const QuickJS = await getQuickJS();
 
     const context = QuickJS.newContext();
 
-    // Create a function from the code string
-    const contextResult = context.evalCode(code);
+    try {
+      // Create a function from the code string
+      const contextResult = context.evalCode(code);
 
-    if (contextResult.error) {
-      contextResult.error.dispose();
-      throw new Error('Failed to create function');
-    }
+      if (contextResult.error) {
+        contextResult.error.dispose();
+        throw new Error('Failed to create function');
+      }
 
-    // Get the function handle
-    const fn = contextResult.value;
+      // Get the function handle
+      const fn = contextResult.value;
+      console.log('### fn: ', fn);
 
-    using fnHandle = context.newFunction(name, () => fn);
+      // Prepare input handles
+      const inputHandles = args.map((arg) => {
+        switch (typeof arg) {
+          case 'string':
+            return context.newString(arg);
+          case 'number':
+            return context.newNumber(arg);
+          case 'boolean':
+            return arg ? context.true : context.false;
+          case 'object':
+            if (arg === null) return context.null;
+            // For objects or arrays, you might need more complex handling
+            throw new Error('Complex types not fully supported');
+          default:
+            throw new Error(`Unsupported argument type: ${typeof arg}`);
+        }
+      });
 
-    context.setProp(context.global, name, fnHandle);
+      console.log('### inputHandles: ', inputHandles);
 
-    // Convert input args to QuickJS handles
-    const inputHandle = this.prepareInputHandle(context, input);
+      // Call the function with args
+      const callResult = context.callFunction(
+        fn,
+        context.global,
+        ...inputHandles
+      );
 
-    // Call the function with args
-    const callResult = context.callFunction(fn, context.global, inputHandle);
+      console.log('### callResult: ', callResult);
 
-    if (callResult.error) {
-      callResult.error.dispose();
-      throw new Error('Function execution failed');
-    }
+      if (callResult.error) {
+        callResult.error.dispose();
+        throw new Error('Function execution failed');
+      }
 
-    // Get the final result and convert it to a JavaScript value
-    const finalResult = context.dump(callResult.value);
+      // Get the final result and convert it to a JavaScript value
+      const finalResult = context.dump(callResult.value);
+      console.log('### finalResult: ', finalResult);
 
-    // Cleanup all handles
-    callResult.value.dispose();
-    fn.dispose();
-    inputHandle.dispose();
+      // Cleanup
+      inputHandles.forEach((handle) => handle.dispose());
 
-    if (contextResult) {
+      callResult.value.dispose();
+
+      fn.dispose();
+
       contextResult.dispose();
+
+      return finalResult;
+    } finally {
+      // Always dispose of the context
+      context.dispose();
     }
-
-    context.dispose();
-
-    return finalResult;
   }
 
   private prepareInputHandle = (ctx: QuickJSContext, input: UnknownData) => {

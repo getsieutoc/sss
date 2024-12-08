@@ -37,6 +37,7 @@ export class FunctionController {
     try {
       return await this.functionService.executeFunction(idOrName, input);
     } catch (err) {
+      console.log('### err: ', err);
       return handleError(err, 'Issues at executing function');
     }
   }
