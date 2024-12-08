@@ -5,6 +5,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { ConfigService } from '@/config';
 import { DELIMITER } from '@/utils/constants';
 import { addYears } from 'date-fns';
+import * as argon2 from 'argon2';
 
 // Mock argon2
 jest.mock('argon2', () => ({
@@ -32,6 +33,7 @@ describe('AuthService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
         count: jest.fn(),
       },
       organization: {
@@ -187,6 +189,52 @@ describe('AuthService', () => {
     });
   });
 
+  describe('updateApiKey', () => {
+    it('should update an API key successfully', async () => {
+      const keyId = 'test-key-id';
+      const updateDto = { description: 'Updated description' };
+      const mockUpdatedKey = {
+        id: keyId,
+        description: 'Updated description',
+      };
+
+      mockPrismaService.client.apiKey.update.mockResolvedValue(mockUpdatedKey);
+
+      const result = await service.updateApiKey(keyId, updateDto);
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: mockUpdatedKey,
+      });
+      expect(mockPrismaService.client.apiKey.update).toHaveBeenCalledWith({
+        where: { id: keyId },
+        data: updateDto,
+      });
+    });
+  });
+
+  describe('deleteApiKey', () => {
+    it('should delete an API key successfully', async () => {
+      const keyId = 'test-key-id';
+      const mockDeletedKey = {
+        id: keyId,
+        publicKey: 'deleted-key',
+      };
+
+      mockPrismaService.client.apiKey.delete.mockResolvedValue(mockDeletedKey);
+
+      const result = await service.deleteApiKey(keyId);
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.OK,
+        data: mockDeletedKey,
+      });
+      expect(mockPrismaService.client.apiKey.delete).toHaveBeenCalledWith({
+        where: { id: keyId },
+      });
+    });
+  });
+
   describe('generateGenesisApiKey', () => {
     it('should generate genesis API key when no organizations and projects exist', async () => {
       // Mock empty database
@@ -277,53 +325,80 @@ describe('AuthService', () => {
   });
 
   describe('validateApiKey', () => {
-    it('should validate and update last used timestamp for valid API key', async () => {
+    const mockPublicKey = 'test-public';
+    const mockSecretKey = 'test-secret';
+    const mockToken = `${mockPublicKey}${DELIMITER}${mockSecretKey}`;
+
+    beforeEach(() => {
+      mockPrismaService.client.apiKey.findUnique.mockReset();
+      mockPrismaService.client.apiKey.update.mockReset();
+    });
+
+    it('should validate and update lastUsedAt for a valid API key', async () => {
       const mockApiKey = {
-        id: 1,
+        id: 'test-id',
+        publicKey: mockPublicKey,
         hashedSecretKey: 'hashed-secret',
       };
-      const mockUpdatedKey = {
-        ...mockApiKey,
-        lastUsedAt: NOW,
-      };
+      const mockUpdatedKey = { ...mockApiKey, lastUsedAt: NOW };
 
       mockPrismaService.client.apiKey.findUnique.mockResolvedValue(mockApiKey);
       mockPrismaService.client.apiKey.update.mockResolvedValue(mockUpdatedKey);
 
-      // Mock the private verify method
-      jest.spyOn(service as any, 'verify').mockResolvedValue(true);
-
-      const result = await service.validateApiKey(
-        'public-key' + DELIMITER + 'secret-key'
-      );
+      const result = await service.validateApiKey(mockToken);
 
       expect(result).toEqual(mockUpdatedKey);
+      expect(mockPrismaService.client.apiKey.findUnique).toHaveBeenCalledWith({
+        omit: { hashedSecretKey: false },
+        where: {
+          publicKey: mockPublicKey,
+          expiresAt: { gt: NOW },
+        },
+      });
       expect(mockPrismaService.client.apiKey.update).toHaveBeenCalledWith({
         where: { id: mockApiKey.id },
         data: { lastUsedAt: NOW },
       });
     });
 
-    it('should return null for invalid API key', async () => {
+    it('should return null for invalid token format', async () => {
       mockPrismaService.client.apiKey.findUnique.mockResolvedValue(null);
 
-      const result = await service.validateApiKey('invalid-key');
-
-      expect(result).toBeNull();
-    });
-
-    it('should return null for expired API key', async () => {
-      mockPrismaService.client.apiKey.findUnique.mockResolvedValue(null);
-
-      const result = await service.validateApiKey('expired-key');
+      const result = await service.validateApiKey('invalid-token');
 
       expect(result).toBeNull();
       expect(mockPrismaService.client.apiKey.findUnique).toHaveBeenCalledWith({
         omit: { hashedSecretKey: false },
-        where: expect.objectContaining({
+        where: {
+          publicKey: 'invalid-token',
           expiresAt: { gt: NOW },
-        }),
+        },
       });
+    });
+
+    it('should return null when API key is not found', async () => {
+      mockPrismaService.client.apiKey.findUnique.mockResolvedValue(null);
+
+      const result = await service.validateApiKey(mockToken);
+
+      expect(result).toBeNull();
+      expect(mockPrismaService.client.apiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('should return null when secret key verification fails', async () => {
+      const mockApiKey = {
+        id: 'test-id',
+        publicKey: mockPublicKey,
+        hashedSecretKey: 'hashed-secret',
+      };
+
+      mockPrismaService.client.apiKey.findUnique.mockResolvedValue(mockApiKey);
+      (argon2.verify as jest.Mock).mockResolvedValueOnce(false);
+
+      const result = await service.validateApiKey(mockToken);
+
+      expect(result).toBeNull();
+      expect(mockPrismaService.client.apiKey.update).not.toHaveBeenCalled();
     });
   });
 });

@@ -28,6 +28,8 @@ describe('AuthController', () => {
     generateGenesisApiKey: jest.fn(),
     createApiKey: jest.fn(),
     listApiKeys: jest.fn(),
+    updateApiKey: jest.fn(),
+    deleteApiKey: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -186,6 +188,102 @@ describe('AuthController', () => {
       mockAuthService.listApiKeys.mockRejectedValue(error);
 
       const result = await controller.listApiKeys();
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Custom error',
+      });
+    });
+  });
+
+  describe('updateApiKey', () => {
+    const mockUpdateResponse = {
+      statusCode: HttpStatus.OK,
+      data: {
+        id: 'key-1',
+        publicKey: 'public-key-1',
+        description: 'Updated description',
+      },
+    };
+
+    const updateDto = {
+      description: 'Updated description',
+    };
+
+    it('should update API key successfully', async () => {
+      mockAuthService.updateApiKey.mockResolvedValue(mockUpdateResponse);
+
+      const result = await controller.updateApiKey('key-1', updateDto);
+
+      expect(result).toBe(mockUpdateResponse);
+      expect(mockAuthService.updateApiKey).toHaveBeenCalledWith(
+        'key-1',
+        updateDto
+      );
+    });
+
+    it('should handle error when updating API key fails', async () => {
+      const error = new Error('Database error');
+      mockAuthService.updateApiKey.mockRejectedValue(error);
+
+      const result = await controller.updateApiKey('key-1', updateDto);
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Issues at updating API key',
+        error: error.message,
+      });
+    });
+
+    it('should handle HttpException when updating API key fails', async () => {
+      const error = new HttpException('Custom error', HttpStatus.BAD_REQUEST);
+      mockAuthService.updateApiKey.mockRejectedValue(error);
+
+      const result = await controller.updateApiKey('key-1', updateDto);
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: 'Custom error',
+      });
+    });
+  });
+
+  describe('deleteApiKey', () => {
+    const mockDeleteResponse = {
+      statusCode: HttpStatus.OK,
+      data: {
+        id: 'key-1',
+        publicKey: 'public-key-1',
+      },
+    };
+
+    it('should delete API key successfully', async () => {
+      mockAuthService.deleteApiKey.mockResolvedValue(mockDeleteResponse);
+
+      const result = await controller.deleteApiKey('key-1');
+
+      expect(result).toBe(mockDeleteResponse);
+      expect(mockAuthService.deleteApiKey).toHaveBeenCalledWith('key-1');
+    });
+
+    it('should handle error when deleting API key fails', async () => {
+      const error = new Error('Database error');
+      mockAuthService.deleteApiKey.mockRejectedValue(error);
+
+      const result = await controller.deleteApiKey('key-1');
+
+      expect(result).toEqual({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: 'Issues at deleting API key',
+        error: error.message,
+      });
+    });
+
+    it('should handle HttpException when deleting API key fails', async () => {
+      const error = new HttpException('Custom error', HttpStatus.BAD_REQUEST);
+      mockAuthService.deleteApiKey.mockRejectedValue(error);
+
+      const result = await controller.deleteApiKey('key-1');
 
       expect(result).toEqual({
         statusCode: HttpStatus.BAD_REQUEST,

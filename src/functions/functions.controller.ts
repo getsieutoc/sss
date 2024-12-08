@@ -1,15 +1,18 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Inject,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiKeyGuard } from '@/auth/guards/api-key.guard';
 import { handleError } from '@/utils/error-handler';
+import { type UnknownData } from '@/types';
 
 import { FunctionService } from './functions.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
@@ -29,10 +32,10 @@ export class FunctionController {
     }
   }
 
-  @Post(':name/execute')
+  @Post(':name')
   async executeFunction(
     @Param('name') name: string,
-    @Body() input: any
+    @Body() input: { args: UnknownData[] }
   ) {
     try {
       return await this.functionService.executeFunction(name, input);
@@ -47,6 +50,27 @@ export class FunctionController {
       return await this.functionService.listFunctions(projectId);
     } catch (err) {
       return handleError(err, 'Issues at listing function');
+    }
+  }
+
+  @Patch(':id')
+  async updateFunction(
+    @Param('id') id: string,
+    @Body() body: CreateFunctionDto
+  ) {
+    try {
+      return await this.functionService.updateFunction(id, body);
+    } catch (err) {
+      return handleError(err, 'Issues at updating function');
+    }
+  }
+
+  @Delete(':id')
+  async deleteFunction(@Param('id') id: string) {
+    try {
+      return await this.functionService.deleteFunction(id);
+    } catch (err) {
+      return handleError(err, 'Issues at deleting function');
     }
   }
 }

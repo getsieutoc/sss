@@ -53,7 +53,7 @@ export class FunctionService {
       if (language === 'javascript') {
         try {
           return await this.executeJavascript({ code, name }, input);
-        } catch (error) {
+        } catch (_) {
           console.log(`[JavaScript Execution Error] Function: ${name}`);
           return {
             statusCode: HttpStatus.BAD_REQUEST,
@@ -66,7 +66,7 @@ export class FunctionService {
         statusCode: HttpStatus.BAD_REQUEST,
         message: 'Unsupported language',
       };
-    } catch (error) {
+    } catch (_) {
       console.log(`[Function Execution Error] ID/Name: ${idOrName}`);
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -226,7 +226,7 @@ export class FunctionService {
         statusCode: HttpStatus.OK,
         data: result,
       };
-    } catch (error) {
+    } catch (_error) {
       console.log(`[JavaScript General Error] Function: ${name}`);
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

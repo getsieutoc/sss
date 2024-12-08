@@ -7,6 +7,7 @@ import { addYears } from 'date-fns';
 import * as argon2 from 'argon2';
 
 import { CreateApiKeyDto } from './dto/api-key.dto';
+import { UpdateApiKeyDto } from './dto/update-key.dto';
 
 @Injectable()
 export class AuthService {
@@ -93,6 +94,29 @@ export class AuthService {
       statusCode: HttpStatus.CREATED,
       data: result.data,
       apiKey: result.apiKey,
+    };
+  }
+
+  async updateApiKey(id: string, updateDto: UpdateApiKeyDto) {
+    const apiKey = await this.prisma.client.apiKey.update({
+      where: { id },
+      data: updateDto,
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: apiKey,
+    };
+  }
+
+  async deleteApiKey(id: string) {
+    const apiKey = await this.prisma.client.apiKey.delete({
+      where: { id },
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: apiKey,
     };
   }
 
