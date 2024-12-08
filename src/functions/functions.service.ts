@@ -38,190 +38,51 @@ export class FunctionService {
   }
 
   async executeFunction(idOrName: string, input: { args: UnknownData[] }) {
-    try {
-      const res = await this.prisma.client.function.findFirstOrThrow({
-        where: {
-          OR: [{ id: idOrName }, { name: idOrName }],
-        },
-      });
+    // Find the function in database
+    const functionData = await this.prisma.client.function.findFirst({
+      where: { id: idOrName },
+    });
 
-      const { code, language, name } = res;
-
-      if (language === 'javascript') {
-        try {
-          const result = await this.executeJavascript({ code, name }, input);
-          return result;
-        } catch (error) {
-          if (error instanceof Error) {
-            return {
-              statusCode: HttpStatus.BAD_REQUEST,
-              message: error.message,
-            };
-          }
-          return {
-            statusCode: HttpStatus.BAD_REQUEST,
-            message: 'JavaScript execution failed',
-          };
-        }
-      }
-
-      return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: 'Unsupported language',
-      };
-    } catch (_error) {
+    if (!functionData) {
       return {
         statusCode: HttpStatus.NOT_FOUND,
-        message: 'Function not found',
+        data: null,
       };
     }
-  }
-
-  private prepareInputHandle = (ctx: any, input: Record<string, unknown>) => {
-    if (!input || typeof input !== 'object') {
-      return ctx.null;
-    }
-
-    const objHandle = ctx.newObject();
 
     try {
-      for (const [key, value] of Object.entries(input)) {
-        let propHandle;
+      // Create a new QuickJS runtime
+      const runtime = await quickJS();
 
-        switch (typeof value) {
-          case 'string':
-            propHandle = ctx.newString(value);
-            ctx.setProp(objHandle, key, propHandle);
-            propHandle.dispose();
-            break;
-          case 'number':
-            propHandle = ctx.newNumber(value);
-            ctx.setProp(objHandle, key, propHandle);
-            propHandle.dispose();
-            break;
-          case 'boolean':
-            ctx.setProp(objHandle, key, value ? ctx.true : ctx.false);
-            break;
-          case 'object':
-            if (!value) {
-              ctx.setProp(objHandle, key, ctx.null);
-              break;
-            }
-            if (Array.isArray(value)) {
-              const arrayHandle = ctx.newArray();
-              try {
-                value.forEach((v, i) => {
-                  const elemHandle = this.prepareInputHandle(
-                    ctx,
-                    typeof v === 'object' && v !== null
-                      ? (v as Record<string, unknown>)
-                      : { value: v }
-                  );
-                  try {
-                    ctx.setProp(arrayHandle, i, elemHandle);
-                  } finally {
-                    elemHandle.dispose();
-                  }
-                });
-                ctx.setProp(objHandle, key, arrayHandle);
-              } finally {
-                arrayHandle.dispose();
-              }
-              break;
-            }
-            {
-              const nestedHandle = this.prepareInputHandle(
-                ctx,
-                typeof value === 'object' && value !== null
-                  ? (value as Record<string, unknown>)
-                  : { value }
-              );
-              try {
-                ctx.setProp(objHandle, key, nestedHandle);
-              } finally {
-                nestedHandle.dispose();
-              }
-              break;
-            }
-        }
-      }
-      return objHandle;
-    } catch (error) {
-      objHandle.dispose();
-      throw error;
-    }
-  };
+      console.log(runtime); // Log the runtime object to inspect its structure
+      console.log('Available methods:', Object.keys(runtime)); // Log available methods
+      console.log('Available methods:', Object.getOwnPropertyNames(runtime)); // Log available methods
 
-  private async executeJavascript(
-    { code, name }: { code: string; name: string },
-    { args }: { args: UnknownData[] }
-  ) {
-    const { createRuntime } = await quickJS();
-    const runtime = await createRuntime();
+      // Evaluate the function code
+      const evalResult = runtime.evalCode(functionData.code);
 
-    try {
-      // Validate function name
-      const functionName = name.trim() || 'anonymous';
-
-      // First evaluate just the function definition
-      const evalResult = await(runtime as any).evalCode(code);
-      if ('error' in evalResult && evalResult.error) {
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Failed to eval function',
-        };
+      if (evalResult.error) {
+        throw new Error(`Function evaluation error: ${evalResult.error}`);
       }
 
-      // Get the function from global context
-      const funcHandle = (runtime as any).context.getProp(
-        (runtime as any).context.global,
-        functionName
-      );
+      // Get the function from the runtime
+      const fn = runtime.getValue(evalResult.value);
 
-      if (!funcHandle) {
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: 'Function not found in context',
-        };
-      }
+      // Execute the function with provided arguments
+      const result = fn(...(input.args || []));
 
-      try {
-        // Call the function with args
-        const result = await(runtime as any).context.callFunction(
-          funcHandle,
-          null,
-          args.map((arg) =>
-            (runtime as any).context.newString(JSON.stringify(arg))
-          )
-        );
+      // Clean up
+      runtime.dispose();
 
-        if ('error' in result && result.error) {
-          return {
-            statusCode: HttpStatus.BAD_REQUEST,
-            message: `Runtime error in function execution: ${name}`,
-          };
-        }
-
-        const data = (runtime as any).context.dump(result.value);
-        return {
-          statusCode: HttpStatus.OK,
-          data,
-        };
-      } catch (error) {
-        return {
-          statusCode: HttpStatus.BAD_REQUEST,
-          message: `Runtime error in function execution: ${name}`,
-        };
-      } finally {
-        funcHandle.dispose();
-      }
+      return {
+        statusCode: HttpStatus.OK,
+        data: result,
+      };
     } catch (error) {
       return {
-        statusCode: HttpStatus.BAD_REQUEST,
-        message: `Runtime error in function execution: ${name}`,
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        data: error.message,
       };
-    } finally {
-      (runtime as any).context?.dispose?.();
     }
   }
 
@@ -238,6 +99,7 @@ export class FunctionService {
   }
 
   async getFunction(id: string) {
+    console.log('getFunction called with id:', id); // Log the input parameter
     const found = await this.prisma.client.function.findUnique({
       where: { id },
       include: functionIncludes,
