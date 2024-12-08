@@ -1,7 +1,11 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
-import { type QuickJSContext, getQuickJS } from 'quickjs-emscripten';
+import {
+  type QuickJSContext,
+  QuickJSHandle,
+  getQuickJS,
+} from 'quickjs-emscripten';
 import { type UnknownData } from '@/types';
 
 @Injectable()
@@ -74,7 +78,10 @@ export class FunctionService {
     }
   }
 
-  private prepareInputHandle = (ctx: QuickJSContext, input: UnknownData) => {
+  private prepareInputHandle = (
+    ctx: QuickJSContext,
+    input: Record<string, unknown>
+  ) => {
     if (!input || typeof input !== 'object') {
       return ctx.null;
     }
@@ -108,7 +115,12 @@ export class FunctionService {
               const arrayHandle = ctx.newArray();
               try {
                 value.forEach((v, i) => {
-                  const elemHandle = this.prepareInputHandle(ctx, v);
+                  const elemHandle = this.prepareInputHandle(
+                    ctx,
+                    typeof v === 'object' && v !== null
+                      ? (v as Record<string, unknown>)
+                      : { value: v }
+                  );
                   try {
                     ctx.setProp(arrayHandle, i, elemHandle);
                   } finally {
@@ -121,7 +133,12 @@ export class FunctionService {
               }
               break;
             }
-            const nestedHandle = this.prepareInputHandle(ctx, value);
+            const nestedHandle = this.prepareInputHandle(
+              ctx,
+              typeof value === 'object' && value !== null
+                ? (value as Record<string, unknown>)
+                : { value }
+            );
             try {
               ctx.setProp(objHandle, key, nestedHandle);
             } finally {
@@ -144,7 +161,7 @@ export class FunctionService {
     const QuickJS = await getQuickJS();
     const context = QuickJS.newContext();
     let fn = null;
-    let inputHandles = [];
+    let inputHandles: QuickJSHandle[] = [];
     let callResult = null;
 
     try {
@@ -205,6 +222,10 @@ export class FunctionService {
         );
       }
 
+      if (!('value' in callResult)) {
+        throw new Error('Function execution failed: no return value');
+      }
+
       const result = context.dump(callResult.value);
       console.log('Function execution result:', result);
 
@@ -221,7 +242,9 @@ export class FunctionService {
       };
     } finally {
       // Clean up all handles in reverse order
-      if (callResult?.value) callResult.value.dispose();
+      if (callResult && 'value' in callResult) {
+        callResult.value.dispose();
+      }
       if (inputHandles.length > 0) {
         inputHandles.forEach((handle) => {
           if (handle && typeof handle.dispose === 'function') {
