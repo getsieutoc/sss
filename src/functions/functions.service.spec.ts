@@ -67,18 +67,25 @@ describe('FunctionService', () => {
         },
       };
 
-      mockPrismaService.client.function.create.mockResolvedValue(expectedResponse);
+      mockPrismaService.client.function.create.mockResolvedValue(
+        expectedResponse
+      );
 
       const result = await service.registerFunction(createFunctionDto);
 
       expect(result).toEqual({
-        status: HttpStatus.OK,
+        statusCode: HttpStatus.CREATED,
         data: expectedResponse,
       });
       expect(mockPrismaService.client.function.create).toHaveBeenCalledWith({
         data: {
-          ...createFunctionDto,
+          code: createFunctionDto.code,
+          name: createFunctionDto.name,
+          language: createFunctionDto.language,
           metadata: expectedResponse.metadata,
+          project: {
+            connect: { id: createFunctionDto.projectId },
+          },
         },
       });
     });
@@ -104,16 +111,26 @@ describe('FunctionService', () => {
         ...dtoWithMetadata,
       };
 
-      mockPrismaService.client.function.create.mockResolvedValue(expectedResponse);
+      mockPrismaService.client.function.create.mockResolvedValue(
+        expectedResponse
+      );
 
       const result = await service.registerFunction(dtoWithMetadata);
 
       expect(result).toEqual({
-        status: HttpStatus.OK,
+        statusCode: HttpStatus.CREATED,
         data: expectedResponse,
       });
       expect(mockPrismaService.client.function.create).toHaveBeenCalledWith({
-        data: dtoWithMetadata,
+        data: {
+          code: dtoWithMetadata.code,
+          name: dtoWithMetadata.name,
+          language: dtoWithMetadata.language,
+          metadata: dtoWithMetadata.metadata,
+          project: {
+            connect: { id: dtoWithMetadata.projectId },
+          },
+        },
       });
     });
   });

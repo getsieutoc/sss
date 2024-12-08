@@ -13,7 +13,7 @@ jest.mock('argon2', () => ({
 }));
 
 // Mock the current date for consistent testing
-const NOW = new Date('2024-12-08T09:59:48+02:00');
+const NOW = new Date('2024-12-08T11:08:45+02:00');
 
 jest.mock('date-fns', () => ({
   ...jest.requireActual('date-fns'),
@@ -139,16 +139,21 @@ describe('AuthService', () => {
 
       const result = await service.createApiKey({ projectId });
 
-      expect(result.statusCode).toBe(HttpStatus.CREATED);
-      expect(result.data).toBe(mockCreatedKey);
-      expect(result.apiKey).toContain(DELIMITER);
-      expect(mockPrismaService.client.apiKey.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            project: { connect: { id: projectId } },
-          }),
-        })
-      );
+      expect(result).toEqual({
+        statusCode: HttpStatus.CREATED,
+        data: mockCreatedKey,
+        apiKey: expect.stringContaining(DELIMITER),
+      });
+
+      const createCall =
+        mockPrismaService.client.apiKey.create.mock.calls[0][0];
+      expect(createCall.data.project).toEqual({ connect: { id: projectId } });
+      expect(createCall.data.publicKey).toBeTruthy();
+      expect(createCall.data.hashedSecretKey).toBe('mocked-hash');
+      expect(createCall.data.expiresAt).toBeDefined();
+      expect(
+        new Date(createCall.data.expiresAt).getTime()
+      ).toBeGreaterThanOrEqual(NOW.getTime());
     });
 
     it('should create a new API key with custom expiration', async () => {
@@ -166,11 +171,16 @@ describe('AuthService', () => {
         expiresAt: customExpiresAt,
       });
 
-      expect(result.statusCode).toBe(HttpStatus.CREATED);
+      expect(result).toEqual({
+        statusCode: HttpStatus.CREATED,
+        data: mockCreatedKey,
+        apiKey: expect.stringContaining(DELIMITER),
+      });
       expect(mockPrismaService.client.apiKey.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             expiresAt: customExpiresAt,
+            project: { connect: { id: projectId } },
           }),
         })
       );
@@ -243,7 +253,7 @@ describe('AuthService', () => {
 
       const result = await service.generateGenesisApiKey();
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ statusCode: HttpStatus.NO_CONTENT });
       expect(
         mockPrismaService.client.organization.create
       ).not.toHaveBeenCalled();
@@ -257,7 +267,7 @@ describe('AuthService', () => {
 
       const result = await service.generateGenesisApiKey();
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ statusCode: HttpStatus.NO_CONTENT });
       expect(
         mockPrismaService.client.organization.create
       ).not.toHaveBeenCalled();

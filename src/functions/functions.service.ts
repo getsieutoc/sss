@@ -53,11 +53,11 @@ export class FunctionService {
       if (language === 'javascript') {
         try {
           return await this.executeJavascript({ code, name }, input);
-        } catch (jsError) {
+        } catch (error) {
+          console.log(`[JavaScript Execution Error] Function: ${name}`);
           return {
             statusCode: HttpStatus.BAD_REQUEST,
-            message: `JavaScript execution failed: ${jsError.message}`,
-            errorDetails: jsError,
+            message: 'JavaScript execution failed',
           };
         }
       }
@@ -67,16 +67,10 @@ export class FunctionService {
         message: 'Unsupported language',
       };
     } catch (error) {
-      if (error.code === 'P2025') {
-        return {
-          statusCode: HttpStatus.NOT_FOUND,
-          message: `Function not found: ${idOrName}`,
-        };
-      }
+      console.log(`[Function Execution Error] ID/Name: ${idOrName}`);
       return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: `Execution failed: ${error.message}`,
-        errorDetails: error,
+        message: 'Function execution failed',
       };
     }
   }
@@ -154,6 +148,7 @@ export class FunctionService {
       }
       return objHandle;
     } catch (error) {
+      console.log('[Input Handle Preparation Error]');
       objHandle.dispose();
       throw error;
     }
@@ -171,43 +166,39 @@ export class FunctionService {
     let callResult = null;
 
     try {
-      // Ensure code is wrapped in a proper function
       const functionName = name || 'anonymous';
       const wrappedCode = code.trim().startsWith('function')
         ? code
         : `function ${functionName}() { ${code} }`;
 
-      console.log(`Evaluating JavaScript code for function "${functionName}":`);
-      console.log('Original code:', code);
-      console.log('Wrapped code:', wrappedCode);
-      console.log('With arguments:', args);
+      console.log(`[JavaScript Execution] Function: ${functionName}`);
 
-      // First evaluate the function definition
       const contextResult = context.evalCode(wrappedCode);
       if (contextResult.error) {
-        const errorObj = context.dump(contextResult.error);
-        console.error('Function creation error:', errorObj);
         contextResult.error.dispose();
-        throw new Error(
-          `Failed to create function: ${JSON.stringify(errorObj)}`
-        );
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Failed to create function',
+        };
       }
 
-      // Get the function from the global context
+      contextResult.value?.dispose();
+
       fn = context.getProp(context.global, functionName);
       if (!fn) {
-        throw new Error(
-          `Function "${functionName}" not found in global context`
-        );
-      }
-
-      // Check if the property is actually a function
-      const type = context.typeof(fn);
-      if (type !== 'function') {
-        throw new Error(`"${functionName}" is not a function (got ${type})`);
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Function not found in context',
+        };
       }
 
       inputHandles = args.map((arg) => {
+        if (typeof arg === 'object') {
+          return this.prepareInputHandle(
+            context,
+            arg as Record<string, unknown>
+          );
+        }
         switch (typeof arg) {
           case 'string':
             return context.newString(arg);
@@ -215,60 +206,37 @@ export class FunctionService {
             return context.newNumber(arg);
           case 'boolean':
             return arg ? context.true : context.false;
-          case 'object':
-            if (arg === null) return context.null;
-            return context.newString(JSON.stringify(arg));
           default:
-            throw new Error(`Unsupported argument type: ${typeof arg}`);
+            return context.null;
         }
       });
 
-      callResult = context.callFunction(fn, context.global, ...inputHandles);
+      callResult = context.callFunction(fn, context.undefined, ...inputHandles);
 
       if (callResult.error) {
-        const errorObj = context.dump(callResult.error);
-        console.error('Function execution error:', errorObj);
-        callResult.error.dispose();
-        throw new Error(
-          `Function execution failed: ${JSON.stringify(errorObj)}`
-        );
-      }
-
-      if (!('value' in callResult)) {
-        throw new Error('Function execution failed: no return value');
+        console.log(`[JavaScript Runtime Error] Function: ${functionName}`);
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Runtime error in function execution',
+        };
       }
 
       const result = context.dump(callResult.value);
-      console.log('Function execution result:', result);
-
       return {
         statusCode: HttpStatus.OK,
         data: result,
       };
     } catch (error) {
-      console.error('JavaScript execution error:', error);
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      const errorDetails =
-        error instanceof Error ? error.cause || error : error;
-      throw {
+      console.log(`[JavaScript General Error] Function: ${name}`);
+      return {
         statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: `JavaScript execution failed: ${errorMessage}`,
-        errorDetails,
+        message: 'Function execution failed',
       };
     } finally {
-      // Clean up all handles in reverse order
-      if (callResult && 'value' in callResult) {
-        callResult.value.dispose();
-      }
-      if (inputHandles.length > 0) {
-        inputHandles.forEach((handle) => {
-          if (handle && typeof handle.dispose === 'function') {
-            handle.dispose();
-          }
-        });
-      }
-      if (fn) fn.dispose();
+      inputHandles.forEach((handle) => handle?.dispose());
+      fn?.dispose();
+      callResult?.value?.dispose();
+      callResult?.error?.dispose();
       context.dispose();
     }
   }

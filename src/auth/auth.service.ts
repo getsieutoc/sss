@@ -64,7 +64,9 @@ export class AuthService {
 
     // If either exists, silently stop
     if (orgCount > 0 || projectCount > 0) {
-      return;
+      return {
+        statusCode: HttpStatus.NO_CONTENT,
+      };
     }
 
     // Create first organization
