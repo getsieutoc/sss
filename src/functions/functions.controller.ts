@@ -14,7 +14,7 @@ import { handleError } from '@/utils/error-handler';
 import { FunctionService } from './functions.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
 
-@Controller('f')
+@Controller('functions')
 @UseGuards(ApiKeyGuard)
 export class FunctionController {
   @Inject(FunctionService)
@@ -29,13 +29,13 @@ export class FunctionController {
     }
   }
 
-  @Post(':idorname')
+  @Post(':name/execute')
   async executeFunction(
-    @Param('idorname') idOrName: string,
+    @Param('name') name: string,
     @Body() input: any
   ) {
     try {
-      return await this.functionService.executeFunction(idOrName, input);
+      return await this.functionService.executeFunction(name, input);
     } catch (err) {
       return handleError(err, 'Issues at executing function');
     }

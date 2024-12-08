@@ -1,12 +1,12 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService, ConfigType } from '@/config';
 import { PrismaService } from '@/prisma/prisma.service';
+import { randomize } from '@/utils/randomize';
+import { DELIMITER } from '@/utils/constants';
+import { addYears } from 'date-fns';
 import * as argon2 from 'argon2';
 
 import { CreateApiKeyDto } from './dto/api-key.dto';
-import { randomize } from '@/utils/randomize';
-import { addYears } from 'date-fns';
-import { DELIMITER } from '@/utils/constants';
 
 @Injectable()
 export class AuthService {
@@ -48,41 +48,50 @@ export class AuthService {
     });
 
     return {
-      statusCode: HttpStatus.OK,
+      statusCode: HttpStatus.CREATED,
       data: newKey,
       apiKey: [publicKey, secretKey].join(DELIMITER),
     };
   }
 
   /*
-   * Generate API key for the first project of the first organization
+   * Generate API key for the first project of the first organization only if both are empty
    */
   async generateGenesisApiKey() {
-    const numOfOrgs = await this.prisma.client.organization.count();
+    // Check if there are any organizations or projects
+    const orgCount = await this.prisma.client.organization.count();
+    const projectCount = await this.prisma.client.project.count();
 
-    if (numOfOrgs > 1) {
-      throw new Error(
-        'Can only generate Genesis API key for the first organization'
-      );
+    // If either exists, silently stop
+    if (orgCount > 0 || projectCount > 0) {
+      return;
     }
 
-    const numOfProjects = await this.prisma.client.project.count();
+    // Create first organization
+    const firstOrg = await this.prisma.client.organization.create({
+      data: {
+        name: 'My Organization',
+      },
+    });
 
-    if (numOfProjects > 1) {
-      throw new Error(
-        'Can only generate Genesis API key for the first project'
-      );
-    }
+    // Create first project
+    const firstProject = await this.prisma.client.project.create({
+      data: {
+        name: 'Default Project',
+        organizationId: firstOrg.id,
+      },
+    });
 
-    const numOfKeys = await this.prisma.client.apiKey.count();
+    const result = await this.createApiKey({
+      projectId: firstProject.id,
+      description: 'Genesis API key created during setup',
+    });
 
-    if (numOfKeys > 0) {
-      throw new Error('Genesis API key already exists');
-    }
-
-    const firstProject = await this.prisma.client.project.findFirstOrThrow();
-
-    return await this.createApiKey({ projectId: firstProject.id });
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: result.data,
+      apiKey: result.apiKey,
+    };
   }
 
   async validateApiKey(token: string) {

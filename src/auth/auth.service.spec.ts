@@ -36,9 +36,11 @@ describe('AuthService', () => {
       },
       organization: {
         count: jest.fn(),
+        create: jest.fn(),
       },
       project: {
         count: jest.fn(),
+        create: jest.fn(),
         findFirstOrThrow: jest.fn(),
       },
     },
@@ -137,7 +139,7 @@ describe('AuthService', () => {
 
       const result = await service.createApiKey({ projectId });
 
-      expect(result.statusCode).toBe(HttpStatus.OK);
+      expect(result.statusCode).toBe(HttpStatus.CREATED);
       expect(result.data).toBe(mockCreatedKey);
       expect(result.apiKey).toContain(DELIMITER);
       expect(mockPrismaService.client.apiKey.create).toHaveBeenCalledWith(
@@ -164,7 +166,7 @@ describe('AuthService', () => {
         expiresAt: customExpiresAt,
       });
 
-      expect(result.statusCode).toBe(HttpStatus.OK);
+      expect(result.statusCode).toBe(HttpStatus.CREATED);
       expect(mockPrismaService.client.apiKey.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -176,51 +178,91 @@ describe('AuthService', () => {
   });
 
   describe('generateGenesisApiKey', () => {
-    it('should generate genesis API key for first project', async () => {
-      mockPrismaService.client.organization.count.mockResolvedValue(1);
-      mockPrismaService.client.project.count.mockResolvedValue(1);
-      mockPrismaService.client.apiKey.count.mockResolvedValue(0);
-      mockPrismaService.client.project.findFirstOrThrow.mockResolvedValue({
-        id: 'first-project',
-      });
+    it('should generate genesis API key when no organizations and projects exist', async () => {
+      // Mock empty database
+      mockPrismaService.client.organization.count.mockResolvedValue(0);
+      mockPrismaService.client.project.count.mockResolvedValue(0);
 
-      const mockCreatedKey = {
+      // Mock organization creation
+      const mockOrg = { id: 'org-1', name: 'Genesis Organization' };
+      mockPrismaService.client.organization.create.mockResolvedValue(mockOrg);
+
+      // Mock project creation
+      const mockProject = {
+        id: 'proj-1',
+        name: 'Genesis Project',
+        organizationId: mockOrg.id,
+      };
+      mockPrismaService.client.project.create.mockResolvedValue(mockProject);
+
+      // Mock API key creation
+      const mockApiKey = {
         id: 1,
         publicKey: 'genesis-key',
+        hashedSecretKey: 'hashed-secret',
       };
-      mockPrismaService.client.apiKey.create.mockResolvedValue(mockCreatedKey);
+      mockPrismaService.client.apiKey.create.mockResolvedValue(mockApiKey);
 
       const result = await service.generateGenesisApiKey();
 
-      expect(result.statusCode).toBe(HttpStatus.OK);
-      expect(result.data).toBe(mockCreatedKey);
-    });
+      expect(result).toEqual({
+        statusCode: HttpStatus.CREATED,
+        data: mockApiKey,
+        apiKey: expect.stringContaining(DELIMITER),
+      });
 
-    it('should throw error if multiple organizations exist', async () => {
-      mockPrismaService.client.organization.count.mockResolvedValue(2);
+      // Verify organization was created
+      expect(mockPrismaService.client.organization.create).toHaveBeenCalledWith(
+        {
+          data: { name: 'My Organization' },
+        }
+      );
 
-      await expect(service.generateGenesisApiKey()).rejects.toThrow(
-        'Can only generate Genesis API key for the first organization'
+      // Verify project was created
+      expect(mockPrismaService.client.project.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Default Project',
+          organizationId: mockOrg.id,
+        },
+      });
+
+      // Verify API key was created
+      expect(mockPrismaService.client.apiKey.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            description: 'Genesis API key created during setup',
+            project: { connect: { id: mockProject.id } },
+          }),
+        })
       );
     });
 
-    it('should throw error if multiple projects exist', async () => {
+    it('should not generate genesis API key if organizations exist', async () => {
       mockPrismaService.client.organization.count.mockResolvedValue(1);
-      mockPrismaService.client.project.count.mockResolvedValue(2);
+      mockPrismaService.client.project.count.mockResolvedValue(0);
 
-      await expect(service.generateGenesisApiKey()).rejects.toThrow(
-        'Can only generate Genesis API key for the first project'
-      );
+      const result = await service.generateGenesisApiKey();
+
+      expect(result).toBeUndefined();
+      expect(
+        mockPrismaService.client.organization.create
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.client.project.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.client.apiKey.create).not.toHaveBeenCalled();
     });
 
-    it('should throw error if API key already exists', async () => {
-      mockPrismaService.client.organization.count.mockResolvedValue(1);
+    it('should not generate genesis API key if projects exist', async () => {
+      mockPrismaService.client.organization.count.mockResolvedValue(0);
       mockPrismaService.client.project.count.mockResolvedValue(1);
-      mockPrismaService.client.apiKey.count.mockResolvedValue(1);
 
-      await expect(service.generateGenesisApiKey()).rejects.toThrow(
-        'Genesis API key already exists'
-      );
+      const result = await service.generateGenesisApiKey();
+
+      expect(result).toBeUndefined();
+      expect(
+        mockPrismaService.client.organization.create
+      ).not.toHaveBeenCalled();
+      expect(mockPrismaService.client.project.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.client.apiKey.create).not.toHaveBeenCalled();
     });
   });
 

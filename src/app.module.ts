@@ -26,6 +26,7 @@ import { configurations } from './config';
     AuthModule,
     FunctionModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,
@@ -33,6 +34,5 @@ import { configurations } from './config';
     },
     AppService,
   ],
-  controllers: [AppController],
 })
 export class AppModule {}

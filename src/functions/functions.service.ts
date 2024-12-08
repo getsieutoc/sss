@@ -15,7 +15,7 @@ export class FunctionService {
   @Inject(PrismaService)
   private readonly prisma: PrismaService;
 
-  async registerFunction({ metadata, ...rest }: CreateFunctionDto) {
+  async registerFunction({ projectId, metadata, ...rest }: CreateFunctionDto) {
     const defaultMetadata = {
       tags: [],
       dependencies: [],
@@ -30,11 +30,12 @@ export class FunctionService {
       data: {
         ...rest,
         metadata: metadata ?? defaultMetadata,
+        project: { connect: { id: projectId } },
       },
     });
 
     return {
-      status: HttpStatus.OK,
+      statusCode: HttpStatus.CREATED,
       data: response,
     };
   }
