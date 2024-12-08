@@ -13,7 +13,7 @@ export * from '@prisma/client';
 
 export type File = Express.Multer.File;
 
-export type UnknownData = Record<string, unknown>;
+export type UnknownData = string | number | null | Record<string, unknown>;
 
 export type Metadata = UnknownData;
 
