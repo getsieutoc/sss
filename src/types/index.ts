@@ -4,7 +4,9 @@ export * from '@prisma/client';
 
 export type File = Express.Multer.File;
 
-export type Metadata = Record<string, unknown>;
+export type UnknownData = Record<string, unknown>;
+
+export type Metadata = UnknownData;
 
 export type ChatOptions = {
   stream?: boolean /* Enable streaming response */;

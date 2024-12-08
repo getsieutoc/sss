@@ -1,15 +1,15 @@
 import {
-  Controller,
-  Post,
-  Get,
   Body,
-  Param,
+  Controller,
+  Get,
   Inject,
+  Param,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { handleError } from '@/utils/error-handler';
 import { ApiKeyGuard } from '@/auth/guards/api-key.guard';
+import { handleError } from '@/utils/error-handler';
 
 import { FunctionService } from './functions.service';
 import { CreateFunctionDto } from './dto/create-function.dto';
@@ -29,12 +29,14 @@ export class FunctionController {
     }
   }
 
-  @Post(':id')
-  async executeFunction(@Param('id') id: string, @Body() input: any) {
+  @Post(':idorname')
+  async executeFunction(
+    @Param('idorname') idOrName: string,
+    @Body() input: any
+  ) {
     try {
-      return await this.functionService.executeFunction(id, input);
+      return await this.functionService.executeFunction(idOrName, input);
     } catch (err) {
-      console.log('### err: ', err);
       return handleError(err, 'Issues at executing function');
     }
   }

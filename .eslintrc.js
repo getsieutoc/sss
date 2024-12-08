@@ -18,7 +18,7 @@ module.exports = {
   },
   ignorePatterns: ['.eslintrc.js'],
   rules: {
-    'no-console': ['error', { allow: ['info', 'error'] }],
+    'no-console': 'off',
     'no-plusplus': 'off',
     'no-underscore-dangle': 'off',
     '@typescript-eslint/interface-name-prefix': 'off',
