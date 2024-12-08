@@ -246,7 +246,10 @@ describe('FunctionService', () => {
     };
 
     const mockQuickJS = {
-      newContext: jest.fn().mockReturnValue(mockContext),
+      createRuntime: jest.fn().mockResolvedValue({
+        evalCode: mockContext.evalCode,
+        context: mockContext,
+      }),
     };
 
     beforeEach(() => {
@@ -399,8 +402,8 @@ describe('FunctionService', () => {
       const result = await service.executeFunction('nonexistent', { args: [] });
 
       expect(result).toEqual({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: 'Function execution failed',
+        statusCode: HttpStatus.NOT_FOUND,
+        message: 'Function not found',
       });
     });
 
