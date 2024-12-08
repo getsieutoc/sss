@@ -157,36 +157,71 @@ export class FunctionService {
     { args }: { args: UnknownData[] }
   ) {
     const { createRuntime } = await quickJS();
-    const { evalCode } = await createRuntime();
+    const runtime = await createRuntime();
 
     try {
       // Validate function name
       const functionName = name.trim() || 'anonymous';
 
-      // Properly wrap the code if it's not already a function
-      const wrappedCode = code.trim().startsWith('function')
-        ? code
-        : `function ${functionName}(...args) { ${code} }`;
-
-      // Add function call with args
-      const fullCode = `
-        ${wrappedCode}
-        export default ${functionName}(${args.map((arg) => JSON.stringify(arg)).join(',')})
-      `;
-
-      // Evaluate the code
-      const result = await evalCode(fullCode);
-
-      if (!result.ok) {
-        throw new Error(result.error || 'Failed to execute function');
+      // First evaluate just the function definition
+      const evalResult = await(runtime as any).evalCode(code);
+      if ('error' in evalResult && evalResult.error) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Failed to eval function',
+        };
       }
 
-      return {
-        statusCode: HttpStatus.OK,
-        data: result.data,
-      };
+      // Get the function from global context
+      const funcHandle = (runtime as any).context.getProp(
+        (runtime as any).context.global,
+        functionName
+      );
+
+      if (!funcHandle) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Function not found in context',
+        };
+      }
+
+      try {
+        // Call the function with args
+        const result = await(runtime as any).context.callFunction(
+          funcHandle,
+          null,
+          args.map((arg) =>
+            (runtime as any).context.newString(JSON.stringify(arg))
+          )
+        );
+
+        if ('error' in result && result.error) {
+          return {
+            statusCode: HttpStatus.BAD_REQUEST,
+            message: `Runtime error in function execution: ${name}`,
+          };
+        }
+
+        const data = (runtime as any).context.dump(result.value);
+        return {
+          statusCode: HttpStatus.OK,
+          data,
+        };
+      } catch (error) {
+        return {
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: `Runtime error in function execution: ${name}`,
+        };
+      } finally {
+        funcHandle.dispose();
+      }
     } catch (error) {
-      throw error;
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: `Runtime error in function execution: ${name}`,
+      };
+    } finally {
+      (runtime as any).context?.dispose?.();
     }
   }
 
