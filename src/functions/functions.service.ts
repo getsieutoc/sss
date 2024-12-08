@@ -35,15 +35,24 @@ export class FunctionService {
 
   async executeFunction(idOrName: string, input: { args: UnknownData[] }) {
     try {
-      const { code, language, name } =
-        await this.prisma.client.function.findFirstOrThrow({
-          where: {
-            OR: [{ id: idOrName }, { name: idOrName }],
-          },
-        });
+      const fn = await this.prisma.client.function.findFirstOrThrow({
+        where: {
+          OR: [{ id: idOrName }, { name: idOrName }],
+        },
+      });
+
+      const { code, language, name } = fn;
 
       if (language === 'javascript') {
-        return await this.executeJavascript({ code, name }, input);
+        try {
+          return await this.executeJavascript({ code, name }, input);
+        } catch (jsError) {
+          return {
+            statusCode: HttpStatus.BAD_REQUEST,
+            message: `JavaScript execution failed: ${jsError.message}`,
+            errorDetails: jsError,
+          };
+        }
       }
 
       return {
@@ -51,33 +60,125 @@ export class FunctionService {
         message: 'Unsupported language',
       };
     } catch (error) {
-      throw new Error(`Execution failed: ${error.message}`);
+      if (error.code === 'P2025') {
+        return {
+          statusCode: HttpStatus.NOT_FOUND,
+          message: `Function not found: ${idOrName}`,
+        };
+      }
+      return {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Execution failed: ${error.message}`,
+        errorDetails: error,
+      };
     }
   }
 
+  private prepareInputHandle = (ctx: QuickJSContext, input: UnknownData) => {
+    if (!input || typeof input !== 'object') {
+      return ctx.null;
+    }
+
+    const objHandle = ctx.newObject();
+
+    try {
+      for (const [key, value] of Object.entries(input)) {
+        let propHandle;
+
+        switch (typeof value) {
+          case 'string':
+            propHandle = ctx.newString(value);
+            ctx.setProp(objHandle, key, propHandle);
+            propHandle.dispose();
+            break;
+          case 'number':
+            propHandle = ctx.newNumber(value);
+            ctx.setProp(objHandle, key, propHandle);
+            propHandle.dispose();
+            break;
+          case 'boolean':
+            ctx.setProp(objHandle, key, value ? ctx.true : ctx.false);
+            break;
+          case 'object':
+            if (!value) {
+              ctx.setProp(objHandle, key, ctx.null);
+              break;
+            }
+            if (Array.isArray(value)) {
+              const arrayHandle = ctx.newArray();
+              try {
+                value.forEach((v, i) => {
+                  const elemHandle = this.prepareInputHandle(ctx, v);
+                  try {
+                    ctx.setProp(arrayHandle, i, elemHandle);
+                  } finally {
+                    elemHandle.dispose();
+                  }
+                });
+                ctx.setProp(objHandle, key, arrayHandle);
+              } finally {
+                arrayHandle.dispose();
+              }
+              break;
+            }
+            const nestedHandle = this.prepareInputHandle(ctx, value);
+            try {
+              ctx.setProp(objHandle, key, nestedHandle);
+            } finally {
+              nestedHandle.dispose();
+            }
+            break;
+        }
+      }
+      return objHandle;
+    } catch (error) {
+      objHandle.dispose();
+      throw error;
+    }
+  };
+
   private async executeJavascript(
-    { code }: { code: string; name: string },
+    { code, name }: { code: string; name: string },
     { args }: { args: UnknownData[] }
   ) {
     const QuickJS = await getQuickJS();
-
     const context = QuickJS.newContext();
+    let fn = null;
+    let inputHandles = [];
+    let callResult = null;
 
     try {
-      // Create a function from the code string
-      const contextResult = context.evalCode(code);
+      // Ensure code is wrapped in a proper function
+      const functionName = name || 'anonymous';
+      const wrappedCode = code.trim().startsWith('function')
+        ? code
+        : `function ${functionName}() { ${code} }`;
 
+      console.log(`Evaluating JavaScript code for function "${functionName}":`);
+      console.log('Original code:', code);
+      console.log('Wrapped code:', wrappedCode);
+      console.log('With arguments:', args);
+
+      // First evaluate the function definition
+      const contextResult = context.evalCode(wrappedCode);
       if (contextResult.error) {
+        const errorObj = context.dump(contextResult.error);
+        console.error('Function creation error:', errorObj);
         contextResult.error.dispose();
-        throw new Error('Failed to create function');
+        throw new Error(
+          `Failed to create function: ${JSON.stringify(errorObj)}`
+        );
       }
 
-      // Get the function handle
-      const fn = contextResult.value;
-      console.log('### fn: ', fn);
+      // Get the function from the global context
+      fn = context.getProp(context.global, functionName);
+      if (!fn) {
+        throw new Error(
+          `Function "${functionName}" not found in global context`
+        );
+      }
 
-      // Prepare input handles
-      const inputHandles = args.map((arg) => {
+      inputHandles = args.map((arg) => {
         switch (typeof arg) {
           case 'string':
             return context.newString(arg);
@@ -87,88 +188,51 @@ export class FunctionService {
             return arg ? context.true : context.false;
           case 'object':
             if (arg === null) return context.null;
-            // For objects or arrays, you might need more complex handling
-            throw new Error('Complex types not fully supported');
+            return context.newString(JSON.stringify(arg));
           default:
             throw new Error(`Unsupported argument type: ${typeof arg}`);
         }
       });
 
-      console.log('### inputHandles: ', inputHandles);
-
-      // Call the function with args
-      const callResult = context.callFunction(
-        fn,
-        context.global,
-        ...inputHandles
-      );
-
-      console.log('### callResult: ', callResult);
+      callResult = context.callFunction(fn, context.global, ...inputHandles);
 
       if (callResult.error) {
+        const errorObj = context.dump(callResult.error);
+        console.error('Function execution error:', errorObj);
         callResult.error.dispose();
-        throw new Error('Function execution failed');
+        throw new Error(
+          `Function execution failed: ${JSON.stringify(errorObj)}`
+        );
       }
 
-      // Get the final result and convert it to a JavaScript value
-      const finalResult = context.dump(callResult.value);
-      console.log('### finalResult: ', finalResult);
+      const result = context.dump(callResult.value);
+      console.log('Function execution result:', result);
 
-      // Cleanup
-      inputHandles.forEach((handle) => handle.dispose());
-
-      callResult.value.dispose();
-
-      fn.dispose();
-
-      contextResult.dispose();
-
-      return finalResult;
+      return {
+        statusCode: HttpStatus.OK,
+        data: result,
+      };
+    } catch (error) {
+      console.error('JavaScript execution error:', error);
+      throw {
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `JavaScript execution failed: ${error.message}`,
+        errorDetails: error.cause || error,
+      };
     } finally {
-      // Always dispose of the context
+      // Clean up all handles in reverse order
+      if (callResult?.value) callResult.value.dispose();
+      if (inputHandles.length > 0) {
+        inputHandles.forEach((handle) => {
+          if (handle && typeof handle.dispose === 'function') {
+            handle.dispose();
+          }
+        });
+      }
+      if (fn) fn.dispose();
       context.dispose();
     }
   }
-
-  private prepareInputHandle = (ctx: QuickJSContext, input: UnknownData) => {
-    const objHandle = ctx.newObject();
-
-    for (const [key, value] of Object.entries(input)) {
-      switch (typeof value) {
-        case 'string':
-          ctx.setProp(objHandle, key, ctx.newString(value));
-          break;
-        case 'number':
-          ctx.setProp(objHandle, key, ctx.newNumber(value));
-          break;
-        case 'boolean':
-          ctx.setProp(objHandle, key, value ? ctx.true : ctx.false);
-          break;
-        case 'object':
-          // Speciall null case
-          if (!value) {
-            ctx.setProp(objHandle, key, ctx.null);
-            break;
-          }
-          // Array case
-          if (Array.isArray(value)) {
-            const arrayHandle = ctx.newArray();
-            value.map((v, i) => {
-              const newHandle = this.prepareInputHandle(ctx, v);
-              ctx.setProp(arrayHandle, i, newHandle);
-            });
-            break;
-          }
-          // Object case
-          this.prepareInputHandle(ctx, value as UnknownData);
-          break;
-        default:
-          break;
-      }
-    }
-
-    return objHandle;
-  };
 
   async listFunctions(projectId: string) {
     const functions = await this.prisma.client.function.findMany({
