@@ -6,6 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "postinstall": "prisma generate",
     "clean": "rimraf node_modules dist && pnpm install",
     "dev": "docker compose up -d && pnpm run watch && docker compose stop",
     "watch": "trap 'exit 0' SIGINT; nest start -b swc --watch",
@@ -28,7 +29,7 @@
     "@nestjs/config": "3.2.3",
     "@nestjs/core": "10.4.1",
     "@nestjs/jwt": "10.2.0",
-    "@nestjs/mapped-types": "^2.0.5",
+    "@nestjs/mapped-types": "2.0.5",
     "@nestjs/passport": "10.0.3",
     "@nestjs/platform-express": "10.4.1",
     "@nestjs/throttler": "6.2.1",
